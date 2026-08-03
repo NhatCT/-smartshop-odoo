@@ -1,14 +1,3 @@
-"""
-Odoo Live Chat Channel — Tầng 1: Multi-Channel Interface
-Kênh Live Chat nhúng vào Odoo Website (im_livechat).
-
-Cơ chế: Poll Odoo mail.channel qua JSON-RPC để đọc tin nhắn mới,
-trả lời bằng message_post. Không cần cài module custom vào Odoo SaaS.
-
-Odoo 19 đã hợp nhất im_livechat với mail.channel — bot hoạt động
-hoàn toàn qua Odoo External API chuẩn (GOLDEN RULE #1).
-"""
-
 from __future__ import annotations
 import asyncio
 from typing import Callable, Awaitable
@@ -16,29 +5,18 @@ from typing import Callable, Awaitable
 from .base_channel import BaseChannel, ChannelMessage
 from data_layer.connectors.odoo_rpc import OdooClient
 
-# Polling interval (giây) — đọc tin nhắn mới mỗi 5 giây
 LIVECHAT_POLL_INTERVAL = 5
-
-# Prefix để nhận diện tin nhắn từ Bot (tránh echo)
 BOT_AUTHOR_PREFIX = "SmartShop AI"
-
 
 class LiveChatChannel(BaseChannel):
     """
     Odoo Live Chat Channel — poll-based integration.
-    
-    Cách hoạt động:
-    1. Tìm tất cả Live Chat channels đang active trên Odoo
-    2. Mỗi 5 giây, poll tin nhắn mới từ mỗi channel
-    3. Gửi phản hồi AI bằng message_post trực tiếp vào mail.channel
-    4. Track processed message IDs để tránh xử lý lại
     """
 
     def __init__(self):
         super().__init__(name="livechat")
         self._odoo = OdooClient()
         self._processed_msg_ids: set[int] = set()
-        # Map channel_id → last processed message_id
         self._channel_watermarks: dict[int, int] = {}
 
     async def send_message(
@@ -47,10 +25,6 @@ class LiveChatChannel(BaseChannel):
         text: str,
         metadata: dict | None = None
     ) -> bool:
-        """
-        Gửi phản hồi vào Odoo Live Chat channel.
-        user_id là channel_id của mail.channel.
-        """
         channel_id = int(user_id)
         try:
             await asyncio.to_thread(
@@ -70,9 +44,6 @@ class LiveChatChannel(BaseChannel):
             return False
 
     async def run(self, message_handler: Callable[[ChannelMessage], Awaitable[str]]) -> None:
-        """
-        Main event loop: poll Odoo Live Chat channels mỗi 5 giây.
-        """
         self._running = True
         print(f"✅ [{self.name.upper()} CHANNEL] Polling Odoo Live Chat every {LIVECHAT_POLL_INTERVAL}s")
 
@@ -87,8 +58,6 @@ class LiveChatChannel(BaseChannel):
         self,
         message_handler: Callable[[ChannelMessage], Awaitable[str]]
     ) -> None:
-        """Tìm và xử lý tin nhắn mới từ Live Chat channels."""
-        # Tìm live chat channels đang active
         channels = await asyncio.to_thread(
             lambda: self._odoo.search_read(
                 "discuss.channel",
@@ -105,7 +74,6 @@ class LiveChatChannel(BaseChannel):
             channel_id = channel["id"]
             watermark = self._channel_watermarks.get(channel_id, 0)
 
-            # Lấy tin nhắn mới từ channel này
             messages = await asyncio.to_thread(
                 lambda cid=channel_id, wm=watermark: self._odoo.search_read(
                     "mail.message",
@@ -131,21 +99,23 @@ class LiveChatChannel(BaseChannel):
                     msg_id
                 )
 
-                # Lấy partner_id của người gửi (dùng làm user_id)
                 author = msg.get("author_id", [0, "Unknown"])
                 partner_id = str(author[0]) if isinstance(author, list) else "0"
                 author_name = author[1] if isinstance(author, list) else "Unknown"
 
-                # Làm sạch HTML body
                 body = self._strip_html(msg.get("body", ""))
                 if not body or len(body) < 2:
+                    continue
+
+                # Lọc tuyệt đối để chặn Self-Echo Loop trong Odoo LiveChat
+                if any(body.startswith(p) for p in ["⛔", "✅", "❌", "🤖", "⚠️", "💬"]) or "TRUY CẬP BỊ TỪ CHỐI" in body:
                     continue
 
                 print(f"   💬 [LIVECHAT] Channel {channel_id} | {author_name}: {body[:50]}")
 
                 channel_msg = ChannelMessage(
                     channel="livechat",
-                    user_id=str(channel_id),  # Dùng channel_id để gửi reply
+                    user_id=str(channel_id),
                     text=body,
                     raw=msg,
                     metadata={
@@ -162,20 +132,13 @@ class LiveChatChannel(BaseChannel):
                         await self.send_message(str(channel_id), response)
                 except Exception as ex:
                     print(f"   ❌ [LIVECHAT HANDLER]: {ex}")
-                    await self.send_message(
-                        str(channel_id),
-                        "❌ Xin lỗi, tôi đang gặp sự cố. Vui lòng thử lại!"
-                    )
 
-        # Giới hạn processed_msg_ids để tránh memory leak
         if len(self._processed_msg_ids) > 10000:
-            # Giữ lại 5000 IDs mới nhất
             sorted_ids = sorted(self._processed_msg_ids)
             self._processed_msg_ids = set(sorted_ids[-5000:])
 
     @staticmethod
     def _strip_html(html: str) -> str:
-        """Loại bỏ HTML tags khỏi Odoo message body."""
         import re
         clean = re.sub(r"<[^>]+>", "", html)
         return clean.strip()
