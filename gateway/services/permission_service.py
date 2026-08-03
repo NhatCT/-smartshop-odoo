@@ -4,26 +4,13 @@ from gateway.services.binding_service import get_bindings
 class PermissionService:
     """
     Zero-Trust Dynamic Permission Service:
-    Query trực tiếp từ Odoo 19 SaaS `res.users` table.
+    Query trực tiếp từ Odoo 19 SaaS `res.users` & `res.groups` (Native Odoo Access Rights).
     - Đọc Tên hiển thị (name)
     - Đọc Trạng thái Kích hoạt (active)
-    - Đọc Vai trò thực tế trên Odoo UI (role: group_system -> sales_manager, group_user -> sales_staff)
+    - Đọc nhóm quyền gốc trên Odoo UI (Bán hàng, Tồn kho, Kế toán, Quản trị viên)
     """
     def __init__(self):
         self.odoo_client = OdooClient()
-
-    def _map_odoo_role_to_system_role(self, odoo_role: str, user_name: str) -> str:
-        name_lower = (user_name or "").lower()
-        if "kho" in name_lower or "inventory" in name_lower:
-            return "inventory_staff"
-        if "kế toán" in name_lower or "accountant" in name_lower:
-            return "accountant"
-
-        if odoo_role == "group_system":
-            return "sales_manager"
-        elif odoo_role == "group_user":
-            return "sales_staff"
-        return "viewer"
 
     def process_incoming_request(self, telegram_id: int):
         bindings = get_bindings()
@@ -39,12 +26,12 @@ class PermissionService:
                 )
             }
 
-        # Query trực tiếp từ bảng res.users của Odoo SaaS
+        # Query trực tiếp từ bảng res.users của Odoo SaaS kèm all_group_ids
         try:
             records = self.odoo_client.search_read(
                 model="res.users",
                 domain=[["login", "=", email], ["active", "in", [True, False]]],
-                fields=["id", "name", "login", "active", "role"],
+                fields=["id", "name", "login", "active", "role", "all_group_ids"],
                 limit=1
             )
         except Exception as e:
@@ -73,7 +60,38 @@ class PermissionService:
                 )
             }
 
-        assigned_role = self._map_odoo_role_to_system_role(odoo_role, full_name)
+        # Query trực tiếp các nhóm quyền (res.groups) mà user thuộc về trên Odoo
+        full_group_names = []
+        gids = user.get("all_group_ids", [])
+        if gids:
+            try:
+                groups = self.odoo_client.search_read(
+                    model="res.groups",
+                    domain=[["id", "in", gids]],
+                    fields=["id", "name", "full_name"],
+                    limit=100
+                )
+                full_group_names = [str(g.get("full_name", "")) for g in groups]
+            except Exception as e:
+                print(f"⚠️ [PermissionService] Lỗi read res.groups: {e}")
+
+        # Phân vai trò động 100% dựa trên Nhóm quyền thực tế từ giao diện Odoo UI
+        has_sales_admin = any("Bán hàng / Quản trị viên" in fn or "Sales / Administrator" in fn for fn in full_group_names)
+        has_sales_user = any("Bán hàng" in fn or "Sales" in fn for fn in full_group_names)
+        has_inventory = any("Tồn kho" in fn or "Inventory" in fn for fn in full_group_names)
+        has_accounting = any("Kế toán" in fn or "Accounting" in fn for fn in full_group_names)
+        is_system_admin = odoo_role == "group_system" or any("Vai trò / Quản trị viên" in fn for fn in full_group_names)
+
+        if is_system_admin or has_sales_admin:
+            assigned_role = "sales_manager"
+        elif has_sales_user:
+            assigned_role = "sales_staff"
+        elif has_inventory:
+            assigned_role = "inventory_staff"
+        elif has_accounting:
+            assigned_role = "accountant"
+        else:
+            assigned_role = "viewer"
 
         user_info = {
             "odoo_user_id": user.get("id"),
@@ -82,6 +100,7 @@ class PermissionService:
             "role": assigned_role,
             "odoo_raw_role": odoo_role,
             "is_active_odoo": is_active,
+            "odoo_groups": full_group_names
         }
 
         return {
