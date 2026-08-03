@@ -53,7 +53,7 @@ from mcp.client.stdio import stdio_client
 from mcp_layer import MCPClientWrapper
 
 # Layer 3: Agents
-from agents import RecommendationAgent, ValidationAgent, FulfillmentAgent
+from orchestrator.claude_adapter import ClaudeAdapter
 
 # Layer 6: Observability
 from observability import get_audit_logger
@@ -109,9 +109,9 @@ async def on_shutdown():
 # ------------------------------------------------------------------
 
 # Global agents — singleton
-_recommendation_agent = RecommendationAgent()
-_validation_agent = ValidationAgent()
-_fulfillment_agent = FulfillmentAgent()
+_claude_adapter = ClaudeAdapter()
+
+
 
 # Global MCP wrapper (set sau khi MCP session khởi động)
 _mcp_wrapper: MCPClientWrapper | None = None
@@ -181,66 +181,15 @@ except ImportError:
 async def _traced_handle_message(channel_msg, obs_ctx) -> str:
     user_id = channel_msg.user_id
     text = channel_msg.text
-    channel = channel_msg.channel
-
-    langfuse = get_client()
-    if langfuse:
-        try:
-            from observability.tracing.langfuse import mask_sensitive_text
-            langfuse.update_current_span(
-                input=mask_sensitive_text(text[:500])
-            )
-        except Exception:
-            pass
-
-    # Layer 3: Agent Pipeline
+    
     if _mcp_wrapper is None:
-        response = "⚠️ MCP session chưa sẵn sàng. Vui lòng thử lại sau vài giây."
-        _update_trace_output(response)
-        return response
+        return "⚠️ MCP session chưa sẵn sàng."
 
-    # Agent context (truyền channel cho recommendation agent tracing)
-    agent_context = {"channel": channel}
-
-    # Bước 1: Recommendation Agent — span type "agent" (multi-agent subagent rule)
-    if _langfuse_active:
-        try:
-            lf_client = get_client()
-            if lf_client:
-                lf_client.update_current_span(name="recommend-products")
-        except Exception:
-            pass
-
-    rec_result = await _recommendation_agent.execute(
-        user_id, text, user_info, _mcp_wrapper, context=agent_context
+    result = await _claude_adapter.handle_message(
+        user_id, text, obs_ctx, _mcp_wrapper
     )
-
-    if rec_result.next_agent is None:
-        _update_trace_output(rec_result.response)
-        return rec_result.response
-
-    # Bước 2: Validation Agent
-    if rec_result.next_agent == "fulfillment":
-        val_result = await _validation_agent.execute(
-            user_id, text, user_info, _mcp_wrapper,
-            context=rec_result.metadata
-        )
-
-        if not val_result.success or val_result.needs_approval:
-            _update_trace_output(val_result.response)
-            return val_result.response
-
-        # Bước 3: Fulfillment Agent
-        ful_result = await _fulfillment_agent.execute(
-            user_id, text, user_info, _mcp_wrapper,
-            context=val_result.metadata
-        )
-        _update_trace_output(ful_result.response)
-        return ful_result.response
-
-    _update_trace_output(rec_result.response)
-    return rec_result.response
-
+    _update_trace_output(result)
+    return result
 
 def _update_trace_output(response: str) -> None:
     """Cập nhật output của trace hiện tại (per best practices: root trace có output)."""
