@@ -266,9 +266,13 @@ async def run_persistent_bot():
 
             admin_chat_id = os.getenv("TELEGRAM_CHAT_ID", "6553206564")
             send_plain_text(admin_chat_id,
-                f"🚀 SmartShop Bot (Claude Haiku Micro Engine) đã sẵn sàng!\n\n"
-                f"⚡ Chi phí Token đã được ép xuống mốc ~65 VNĐ/prompt.\n"
-                f"Đã bật Micro Tool Schemas & Ephemeral Caching!"
+                f"🛍️ **CHÀO MỪNG BẠN ĐẾN VỚI TRỢ LÝ AI SMARTSHOP ODOO 19!**\n\n"
+                f"🔒 Để đảm bảo an toàn CSDL Doanh nghiệp, vui lòng kích hoạt tài khoản theo 2 bước:\n\n"
+                f"1️⃣ Gửi lệnh đăng ký Email nhân viên:\n"
+                f"`/register email_cua_ban@gmail.com`\n\n"
+                f"2️⃣ Nhập mã xác thực OTP:\n"
+                f"`/verify 123456`\n\n"
+                f"💡 *Sau khi kích hoạt, bạn có thể tự do hỏi thông tin tồn kho, giá bán và tạo báo giá trực tiếp!*"
             )
 
             offset = 0
