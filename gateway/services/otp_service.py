@@ -80,25 +80,17 @@ class OTPService:
             return False, "❌ Mã OTP không khớp. Vui lòng kiểm tra lại!"
 
         email = pending["email"]
-        role = PREDEFINED_EMAIL_ROLES.get(email, "viewer")
-        if email in REQUIRES_ADMIN_APPROVAL_EMAILS:
-            PENDING_APPROVAL_STORE[str_id] = {
-                "email": email,
-                "role": role,
-                "requested_at": time.time(),
-            }
-            del PENDING_OTP_STORE[str_id]
-            return True, (
-                f"⏳ Yêu cầu đăng ký của bạn đã được gửi đến quản trị viên.\n"
-                f"Tài khoản: `{email}`\n"
-                f"Vai trò: **{role.upper()}**\n\n"
-                f"Vui lòng chờ admin phê duyệt trước khi sử dụng."
-            )
 
         bindings = get_bindings()
         bindings[str_id] = email
         save_bindings(bindings)
-        del PENDING_OTP_STORE[str_id]
+        if str_id in PENDING_OTP_STORE:
+            del PENDING_OTP_STORE[str_id]
+
+        from gateway.services.permission_service import PermissionService
+        perm_svc = PermissionService()
+        user_info = perm_svc.process_incoming_request(telegram_id)
+        role = user_info.get("official_role", "viewer") if isinstance(user_info, dict) else "viewer"
 
         return True, (
             f"✅ **XÁC THỰC THÀNH CÔNG!**\n\n"
