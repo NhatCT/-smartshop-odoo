@@ -22,6 +22,8 @@ load_env()
 from odoo_client import OdooClient
 
 # ------------------------------------------------------------------
+TELEGRAM_BINDING_FILE = "telegram_bindings.json"
+
 # BẢNG PHÂN QUYỀN THEO ROLE (Không phụ thuộc vào Groups API của Odoo SaaS)
 # ------------------------------------------------------------------
 ROLE_TOOLS_MAP = {
