@@ -289,8 +289,11 @@ async def run_persistent_bot():
                                 await process_telegram_message_async(session, telegram_id, text)
                             except Exception as ex:
                                 print(f"   ❌ [UPDATE ERROR]: {ex}")
+                    await asyncio.sleep(1)
                 except Exception as e:
                     print(f"   ⚠️ [POLL ERROR]: {e}")
+                    await asyncio.sleep(2)
+
 def main():
     """Entry point for background thread execution"""
     asyncio.run(run_persistent_bot())
