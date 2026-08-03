@@ -41,7 +41,7 @@ class ClaudeAdapter:
                 print(f"⚠️ [ClaudeAdapter] Error listing MCP tools: {e}")
 
         client = get_client()
-        model_name = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20251001")
+        model_name = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
         messages = [{"role": "user", "content": text}]
         final_text = ""
 
@@ -50,7 +50,7 @@ class ClaudeAdapter:
             for _ in range(max_turns):
                 response = client.messages.create(
                     model=model_name,
-                    max_tokens=4096,
+                    max_tokens=1500,
                     system=system_prompt,
                     messages=messages,
                     tools=tools if tools else anthropic.NOT_GIVEN
@@ -98,7 +98,26 @@ class ClaudeAdapter:
 
                 messages.append({"role": "user", "content": tool_results})
 
-            # Xử lý Trigger Approval nếu có
+            # Nếu Claude gọi tool liên tục nhưng không trả lời text (hết max_turns)
+            # → Yêu cầu Claude tổng hợp kết quả từ dữ liệu đã thu thập
+            if not final_text and messages:
+                try:
+                    messages.append({
+                        "role": "user",
+                        "content": "Dựa trên kết quả các tool vừa trả về, hãy tổng hợp và trình bày câu trả lời cuối cùng cho người dùng bằng tiếng Việt."
+                    })
+                    summary_resp = client.messages.create(
+                        model=model_name,
+                        max_tokens=2048,
+                        system=system_prompt,
+                        messages=messages,
+                    )
+                    for b in summary_resp.content:
+                        if hasattr(b, "text"):
+                            final_text += b.text
+                except Exception as e:
+                    print(f"⚠️ [ClaudeAdapter] Force-summarize failed: {e}")
+
             if "[NEED_APPROVAL]" in final_text:
                 try:
                     match = re.search(r'\[NEED_APPROVAL\]\s*(.*)', final_text)
