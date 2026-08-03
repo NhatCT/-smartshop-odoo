@@ -1,49 +1,96 @@
-# SMARTSHOP ODOO 19 ENTERPRISE ARCHITECTURE
+# SMARTSHOP ODOO 19 — ENTERPRISE ARCHITECTURE v2.0
 
-> **TẢI SỬ DỤNG HẠ TẦNG NGUỒN MỞ 80% & TẬP TRUNG 20% NGUỒN LỰC TỐI ƯU UX / CHI PHÍ (GOLDEN RULE #1)**
+> **KIẾN TRÚC 6 TẦNG ĐA KÊNH — Timeline: 8–12 tuần | Multi-tenant | Production-ready**
 
 ```
- 💬 Telegram Client (Text / Voice / Inline Buttons)
-        │
-        ▼
- 🚀 n8n Middleware & Python Gateway (Retry Logic, Queue & Webhook Mgmt)
-        │
- 🔐 Zero-Trust RBAC & OdooPilot Security (HMAC Anti-Hijack Tokens)
-        │
- ⚡ Claude Haiku Micro Engine (Micro Schemas & Ephemeral Caching ~65 VNĐ/prompt)
-        │
- 🔌 Odoo 19 External JSON-RPC / XML-RPC API (Programmatic Keys, 0 Custom Modules)
-        │
- 🌐 Odoo 19 SaaS Enterprise (Single Source of Truth)
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     LAYER 1: MULTI-CHANNEL INTERFACE                     │
+│  Telegram (24/7)   Odoo Live Chat   API Webhook (n8n)   [Slack/Teams*]  │
+└─────────────────────────────┬───────────────────────────────────────────┘
+                               │
+┌─────────────────────────────▼───────────────────────────────────────────┐
+│                    LAYER 2: API GATEWAY (Zero-Trust)                     │
+│   Auth OTP/JWT/RBAC  •  Rate Limit 30req/min  •  Idempotency Dedup      │
+│                  Per-user limits • Tenant isolation • Cost tracking       │
+└─────────────────────────────┬───────────────────────────────────────────┘
+                               │
+┌─────────────────────────────▼───────────────────────────────────────────┐
+│                  LAYER 3: MULTI-AGENT STATE MACHINE                      │
+│    RecommendationAgent → ValidationAgent (HITL) → FulfillmentAgent      │
+│   Find products/stock   Score & approve rules    Create orders/confirm   │
+└─────────────────────────────┬───────────────────────────────────────────┘
+                               │
+┌─────────────────────────────▼───────────────────────────────────────────┐
+│                    LAYER 4: BUSINESS SKILLS (JIT Loading)                │
+│    Sales Skill ✅    Inventory Skill ✅    Accounting Skill ✅            │
+│   Quote, forecast    Stock, reorder        AR/AP, cash flow              │
+└─────────────────────────────┬───────────────────────────────────────────┘
+                               │
+┌─────────────────────────────▼───────────────────────────────────────────┐
+│              LAYER 5: ODOO MCP (erpipe-org/mcp-odoo)                    │
+│   search_records • read_record • aggregate_records • execute_write       │
+│         Cache 30min TTL • Fallback (serve stale if Odoo down)           │
+│                      Async timeout 15s • Retry ×2                       │
+└─────────────────────────────┬───────────────────────────────────────────┘
+                               │
+┌─────────────────────────────▼───────────────────────────────────────────┐
+│                    LAYER 6: OBSERVABILITY                                │
+│   LangFuse (cost/token tracking)   Odoo Chatter (audit logs, history)   │
+│   Prometheus-ready /metrics        Per-channel, per-user cost breakdown  │
+└─────────────────────────────────────────────────────────────────────────┘
+
+* Slack/Teams: thiết kế Channel Adapter sẵn — chỉ cần cài token
 ```
 
 ---
 
-## 🌟 3 TRỤ CỘT KIẾN TRÚC NGUỒN MỞ (80/20 STRATEGY):
+## 📁 Cấu Trúc Package
 
-### A. Tái sử dụng n8n làm Middleware (80% Open Source Reuse)
-* **Các Node tái sử dụng:**
-  * **Telegram Node:** Tiếp nhận/Phản hồi tin nhắn và gửi Inline Keyboard Confirmation Buttons.
-  * **Odoo / HTTP Request Node:** Truy vấn CRUD qua Odoo 19 Programmatic API.
-  * **Schedule Trigger Node:** Hẹn giờ tự động Cảnh báo Tồn kho (8:00 AM) & Báo cáo Doanh thu (18:00 PM).
-* **Lợi ích:** Không cần tự phát triển Backend Webhook, Retry logic khi mất mạng hay Hệ thống hàng đợi tin nhắn (Queue Management).
+```
+smartshop-odoo/
+├── app_entrypoint.py          # 🚀 Main entry: FastAPI + 3 channel threads
+│
+├── gateway/                   # Layer 2: Security & Rate Control
+│   ├── auth.py                # OTP/JWT/RBAC (wrapper → auth_gateway.py)
+│   ├── rate_limiter.py        # Sliding window 30 req/min/user
+│   └── idempotency.py         # Request dedup TTL=5min
+│
+├── agents/                    # Layer 3: Workflow Agents
+│   ├── base_agent.py          # Abstract BaseAgent + AgentResult
+│   ├── recommendation.py      # Find products, check stock, detect intent
+│   ├── validation.py          # HITL gates: high-value, discount rules
+│   └── fulfillment.py         # Create sale.order + Chatter audit
+│
+├── channels/                  # Layer 1: Multi-Channel
+│   ├── base_channel.py        # Channel Adapter interface
+│   ├── telegram_channel.py    # Telegram 24/7 polling
+│   ├── livechat_channel.py    # Odoo Live Chat (im_livechat)
+│   └── webhook_channel.py     # REST API / n8n webhook
+│
+├── mcp_layer/                 # Layer 5: MCP with Cache & Fallback
+│   ├── mcp_cache.py           # In-memory TTL=30min LRU cache
+│   └── mcp_client.py          # MCPClientWrapper: timeout+retry+fallback
+│
+├── observability/             # Layer 6: Cost Tracking & Audit
+│   ├── langfuse_tracker.py    # LangFuse Cloud (50k events/month free)
+│   └── audit_logger.py        # Odoo Chatter audit trail
+│
+└── .agents/skills/            # Layer 4: Business Skills (JIT)
+    ├── sales-skill/            # Quote creation, customer debt
+    ├── inventory-skill/        # Stock check, reorder alerts
+    └── accounting-skill/       # AR/AP, cash flow analysis
+```
 
 ---
 
-### B. Tái sử dụng Kiến trúc Bảo mật & Workflow của OdooPilot
-* **Cơ chế Xác nhận 2 bước (Confirmation Workflow):** Trước khi chốt đơn hay phê duyệt, AI gửi Thẻ Xác Nhận Nút Bấm (`Yes/No Inline Buttons`) để người dùng/thủ kho bấm xác nhận chủ động.
-* **Xác thực Anti-Hijack & Webhook Security:** Tích hợp mã **HMAC-SHA256 Hash Tokens** ký tên bí mật cho từng nút bấm phê duyệt (`approve_so_<id>_<hmac_hash>`), chống giả mạo ID người phê duyệt.
+## ⚡ Chỉ Số Hiệu Năng
 
----
-
-### C. Tái sử dụng chuẩn Odoo 19 Programmatic External API (JSON-RPC / REST)
-* Tận dụng 100% cơ chế API Key chuẩn và Endpoint JSON-RPC / XML-RPC của Odoo 19 SaaS Enterprise.
-* **Lợi ích:** **KHÔNG CẦN CÀI ĐẶT BẤT KỲ MODULE PYTHON CUSTOM NÀO VÀO ODOO**, đảm bảo tương thích 100% với bản Odoo 19 SaaS Cloud bị giới hạn cài module ngoài.
-
----
-
-## 📈 TỐI ƯU CHI PHÍ VÀ HIỆU NĂNG HARNESS BENCHMARK:
-
-* **Tỷ lệ Chính xác (Pass Rate):** `100.0%` (Layer 6 Promptfoo Evaluation Harness)
-* **Độ trễ xử lý (Latency):** `~1.0 giây` (Warm Session)
-* **Chi phí Token:** **`~$0.00048 - $0.0025 USD (~12 - 65 VNĐ) / prompt`** (Giảm 97.5% chi phí API)
+| Chỉ số | Giá trị |
+|--------|---------|
+| Chi phí/prompt | ~$0.0003–$0.002 (~8–50 VNĐ) |
+| Cache hit rate | ~40–60% (30min TTL) |
+| Latency (warm) | ~1.0–2.5 giây |
+| Rate limit | 30 requests/phút/user |
+| Idempotency TTL | 5 phút |
+| MCP timeout | 15 giây (retry ×2) |
+| LangFuse quota | 50,000 traces/tháng (Free) |
