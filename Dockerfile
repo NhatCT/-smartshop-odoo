@@ -20,5 +20,5 @@ COPY . .
 # Expose FastAPI Port
 EXPOSE 8000
 
-# Start script running both FastAPI Gateway and Telegram Bot Runner
-CMD ["python", "app_gateway.py"]
+# Start script running FastAPI Auth Gateway
+CMD ["python", "auth_gateway.py"]
