@@ -27,6 +27,11 @@ class MCPToolResult:
         self.from_fallback = from_fallback
         self.timestamp = time.time()
 
+    def __str__(self) -> str:
+        if self.content and hasattr(self.content[0], "text"):
+            return str(self.content[0].text)
+        return ""
+
 
 class MCPClientWrapper:
     """

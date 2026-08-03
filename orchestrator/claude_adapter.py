@@ -88,7 +88,10 @@ class ClaudeAdapter:
                     tool_id = tu.id
                     try:
                         res = await mcp_session.call_tool(tool_name, arguments=tool_args)
-                        res_str = str(res)
+                        if hasattr(res, "content") and res.content and hasattr(res.content[0], "text"):
+                            res_str = res.content[0].text
+                        else:
+                            res_str = str(res)
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": tool_id,
