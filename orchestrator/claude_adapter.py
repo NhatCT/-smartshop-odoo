@@ -41,7 +41,7 @@ class ClaudeAdapter:
                 print(f"⚠️ [ClaudeAdapter] Error listing MCP tools: {e}")
 
         client = get_client()
-        model_name = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
+        model_name = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20251001")
         messages = [{"role": "user", "content": text}]
         final_text = ""
 
@@ -50,7 +50,7 @@ class ClaudeAdapter:
             for _ in range(max_turns):
                 response = client.messages.create(
                     model=model_name,
-                    max_tokens=1500,
+                    max_tokens=4096,
                     system=system_prompt,
                     messages=messages,
                     tools=tools if tools else anthropic.NOT_GIVEN
