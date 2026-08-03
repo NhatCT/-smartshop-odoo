@@ -17,8 +17,26 @@ class OTPService:
 
     def request_otp(self, telegram_id, email):
         email = email.lower().strip()
-        if email not in PREDEFINED_EMAIL_ROLES:
+        from data_layer.connectors.odoo_rpc import OdooClient
+        client = OdooClient()
+        try:
+            records = client.search_read(
+                model="res.users",
+                domain=[["login", "=", email], ["active", "in", [True, False]]],
+                fields=["id", "name", "login", "active"],
+                limit=1
+            )
+        except Exception:
+            records = []
+
+        if not records:
             return False, f"❌ Email '{email}' không tồn tại trong hệ thống Odoo 19 SaaS SmartShop!\nVui lòng liên hệ Admin để được tạo tài khoản Odoo."
+
+        user = records[0]
+        if not user.get("active", True):
+            return False, f"🚨 Tài khoản Odoo '{email}' đã bị VÔ HIỆU HÓA bởi Admin trên Odoo 19!\nMọi truy cập bị từ chối theo chính sách Zero-Trust."
+
+        employee_name = user.get("name", email)
 
         otp_code = f"{random.randint(100000, 999999)}"
         PENDING_OTP_STORE[str(telegram_id)] = {
@@ -27,7 +45,6 @@ class OTPService:
             "timestamp": time.time()
         }
 
-        employee_name = PREDEFINED_EMAIL_NAMES.get(email, email)
         sent = self.notification_service.send_otp_via_n8n(email, otp_code, employee_name)
         if sent:
             print(f"\n✅ [OTP EMAIL SENT via n8n]: Telegram ID [{telegram_id}] | Email: {email}")

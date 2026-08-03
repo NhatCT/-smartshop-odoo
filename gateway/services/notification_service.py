@@ -4,8 +4,8 @@ import urllib.request
 
 class NotificationService:
     def __init__(self):
-        self.n8n_otp_url = os.getenv("N8N_OTP_WEBHOOK_URL")
-        self.n8n_approval_url = os.getenv("N8N_APPROVAL_WEBHOOK_URL")
+        self.n8n_otp_url = os.getenv("N8N_OTP_WEBHOOK_URL", "https://odooworkflow.app.n8n.cloud/webhook/send-otp-email")
+        self.n8n_approval_url = os.getenv("N8N_APPROVAL_WEBHOOK_URL", "https://odooworkflow.app.n8n.cloud/webhook/approval-webhook")
 
     def send_otp_via_n8n(self, to_email, otp_code, employee_name):
         if not self.n8n_otp_url:
