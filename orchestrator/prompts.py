@@ -1,112 +1,98 @@
 """
-Enterprise Plug-and-Play AI Prompt Engine — SmartShop Odoo 19 AI Gateway
-100% Config-Driven & Parameterized Architecture: Zero Hardcoding.
+Enterprise Self-Describing Prompt Engine — SmartShop Odoo 19 AI Gateway
+Zero Role Matrix: Claude tự suy luận quyền hạn trực tiếp từ native Odoo groups.
 """
 
-import os
 from gateway.services.config_registry_service import ConfigRegistryService
 
 _config_registry = None
-def get_config_registry():
+def _get_registry():
     global _config_registry
     if _config_registry is None:
         _config_registry = ConfigRegistryService()
     return _config_registry
 
-DEFAULT_BASE_PROMPT = """Bạn là Trợ lý AI Trợ lý Điều hành của Doanh nghiệp Odoo 19.
-Nhiệm vụ: Hỗ trợ người dùng tra cứu thông tin, quản lý nghiệp vụ và thực thi quy trình tự động.
 
-THÔNG TIN NGƯỜI DÙNG XÁC THỰC:
-- Họ và Tên: {full_name}
-- Email Odoo: {email}
-- Vai trò Hệ thống: {role}
-- Nhóm quyền Odoo (Native Access Rights): {groups_summary}
+DEFAULT_BASE_PROMPT = """\
+Bạn là Trợ lý AI Điều hành của Doanh nghiệp Odoo 19.
+Nhiệm vụ: Hỗ trợ người dùng tra cứu thông tin, quản lý nghiệp vụ và thực thi quy trình nội bộ.
 
-CHÍNH SÁCH BẢO MẬT & PHÂN QUYỀN (ZERO-TRUST POLICY):
-{permission_directives}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NGƯỜI DÙNG ĐÃ XÁC THỰC (Odoo SaaS Live):
+  Họ và Tên : {full_name}
+  Email Odoo : {email}
+  Nhóm quyền: (Lấy trực tiếp từ Odoo Access Rights — nguồn sự thật duy nhất)
+{groups_block}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-QUY TRÌNH THỰC THI CHUẨN:
-1. TRUY VẤN NATIVE DATA: Sử dụng các MCP Tool được cấp phép để truy vấn dữ liệu trực tiếp từ Odoo.
-2. TRÌNH BÀY BÁO CÁO: Kết quả trình bày dưới dạng bảng Markdown sạch sẽ, có tổng cộng rõ ràng.
-3. PHÊ DUYỆT ĐƠN HÀNG LỚN (NGƯỠNG: >= {approval_threshold_formatted}):
-   - Đơn hàng có tổng giá trị >= {approval_threshold_formatted} không được tạo tự động trên Odoo.
-   - Hãy thông báo cho người dùng biết đơn cần xin phê duyệt từ Quản lý.
-   - Trả về cấu trúc JSON này ở cuối câu trả lời: `[NEED_APPROVAL] {{"order_name": "Đơn Hàng Lớn", "total": <tổng_tiền_chính_xác>}}`
-4. XÁC NHẬN DUYỆT: Khi có lệnh "[MANAGER_APPROVED] Tạo đơn đi" ➔ Dùng Tool tạo Sale Order trên Odoo.
+NGUYÊN TẮC PHÂN QUYỀN (ZERO-TRUST — KHÔNG ĐƯỢC VI PHẠM):
+Dựa vào danh sách nhóm quyền Odoo ở trên, hãy TỰ XÁC ĐỊNH quyền hạn của người dùng:
+- Nhóm "Bán hàng / Quản trị viên" hoặc "Vai trò / Quản trị viên" → Toàn quyền: xem báo cáo doanh số, tạo & duyệt đơn.
+- Nhóm "Bán hàng / Người dùng" → Được tư vấn sản phẩm, tạo đơn hàng nhỏ. Không xem báo cáo tài chính tổng quan.
+- Nhóm "Tồn kho / Người dùng" → Chỉ kiểm kho và tra cứu sản phẩm. Không xem doanh số, không tạo đơn.
+- Nhóm "Kế toán / ..." → Được xem hóa đơn, báo cáo tài chính. Không tạo Sale Order.
+- Không có nhóm nghiệp vụ nào → Chỉ tra cứu thông tin công khai.
+
+⛔ NẾU USER YÊU CẦU VƯỢT QUYỀN: Tuyệt đối không gọi Tool. Phản hồi từ chối ngay lập tức, nêu rõ nhóm quyền bị thiếu.
+
+QUY TRÌNH THỰC THI (KHI ĐỦ QUYỀN):
+1. TRUY VẤN DỮ LIỆU: Gọi MCP Tool (search_records, aggregate_records) để lấy dữ liệu thực tế từ Odoo.
+2. TRÌNH BÀY: Kết quả dưới dạng bảng Markdown sạch, rõ ràng, có tổng hợp.
+3. ĐƠN HÀNG LỚN (>= {approval_threshold}):
+   - Không tạo trực tiếp. Thông báo cho user cần phê duyệt từ Quản lý.
+   - Gửi về cuối câu trả lời: `[NEED_APPROVAL] {{"order_name": "...", "total": <số tiền>}}`
+4. KHI ĐÃ DUYỆT: Nhận "[MANAGER_APPROVED] Tạo đơn đi" → Dùng Tool tạo Sale Order.
 """
 
-def build_system_prompt(user_info: dict, role: str) -> str:
+
+def build_system_prompt(user_info: dict, role: str = "") -> str:
     """
-    Sinh Dynamic System Prompt chuẩn Đa Công Ty (Multi-Tenant Config-Driven).
-    Đọc toàn bộ ngưỡng phê duyệt, prompt mẫu từ Odoo System Parameters.
+    Sinh System Prompt động từ raw Odoo groups — không có role matrix trong code.
+    Claude tự suy luận quyền hạn từ danh sách nhóm quyền Odoo thực tế.
     """
-    registry = get_config_registry()
+    registry = _get_registry()
 
     full_name = user_info.get("full_name", "Khách hàng")
     email = user_info.get("email", "unknown")
     groups = user_info.get("odoo_groups", [])
-    
-    groups_summary = ", ".join(groups[:4]) if groups else "Người dùng Odoo Standard"
-    if len(groups) > 4:
-        groups_summary += f" (+{len(groups)-4} nhóm)"
 
-    # Đọc Ngưỡng duyệt đơn hàng động từ Odoo (Mặc định 20,000,000)
+    # Định dạng danh sách nhóm quyền dễ đọc
+    if groups:
+        # Lọc bỏ các nhóm kỹ thuật nội bộ không liên quan đến nghiệp vụ
+        skip_keywords = ["Technical", "B qua", "Địa chỉ", "Trình chỉnh", "Trang web"]
+        filtered = [g for g in groups if not any(kw in g for kw in skip_keywords)]
+        groups_block = "\n".join(f"    • {g}" for g in filtered) if filtered else "    • (Không có nhóm nghiệp vụ)"
+    else:
+        groups_block = "    • (Không thể đọc nhóm quyền — hãy thận trọng)"
+
+    # Đọc ngưỡng phê duyệt đơn hàng từ Odoo System Parameter
     try:
         thresh_val = float(registry.get_parameter("smartshop.approval_threshold", "20000000"))
     except Exception:
-        thresh_val = 20000000.0
-    thresh_formatted = f"{thresh_val:,.0f} VNĐ"
+        thresh_val = 20_000_000
+    thresh_str = f"{thresh_val:,.0f} VNĐ"
 
-    # Đọc Custom System Prompt Template từ Odoo System Parameters (nếu Admin công ty cấu hình)
+    # Đọc Custom Base Prompt từ Odoo System Parameter (Admin có thể tùy chỉnh)
     try:
-        custom_base = registry.get_parameter("smartshop.ai_system_prompt")
-        base_template = custom_base if custom_base else DEFAULT_BASE_PROMPT
+        custom = registry.get_parameter("smartshop.ai_system_prompt")
+        base_template = custom if custom else DEFAULT_BASE_PROMPT
     except Exception:
         base_template = DEFAULT_BASE_PROMPT
-
-    # Sinh chỉ thị phân quyền động dựa trên Native Odoo Role Matrix
-    if role == "sales_manager":
-        permission_directives = (
-            "- Quyền Quản trị Bán hàng (sales_manager):\n"
-            "  + Được xem Báo cáo Doanh số tài chính tổng quan (`sale.order`).\n"
-            "  + Được tạo đơn hàng & phê duyệt đơn hàng lớn.\n"
-            "  + Được tra cứu kho, sản phẩm và khách hàng toàn hệ thống."
-        )
-    elif role == "inventory_staff":
-        permission_directives = (
-            "- Quyền Nhân viên Kho (inventory_staff):\n"
-            "  + CHỈ ĐƯỢC TRUY CẬP: Tra cứu thông tin sản phẩm (`product.product`) và kiểm tra tồn kho (`stock.quant`).\n"
-            "  + ⛔ BỊ CHẶN TUYỆT ĐỐI: Xem Báo cáo Doanh số tài chính (`sale.order`) và Tạo đơn hàng.\n"
-            "  + NẾU USER YÊU CẦU XEM DOANH SỐ HOẶC TẠO ĐƠN ➔ TUYỆT ĐỐI KHÔNG GỌI TOOL. "
-            f"Trả lời ngay: '⛔ **TRUY CẬP BỊ TỪ CHỐI (Zero-Trust Policy)**: Tài khoản Nhân viên Kho ({email}) không có quyền xem Báo cáo Doanh số tài chính công ty. Vui lòng liên hệ Admin!'"
-        )
-    elif role == "accountant":
-        permission_directives = (
-            "- Quyền Kế toán (accountant):\n"
-            "  + Được xem Báo cáo Doanh số, Hóa đơn tài chính (`account.move`).\n"
-            "  + ⛔ BỊ CHẶN: Không được tự ý Tạo Sale Order."
-        )
-    elif role == "sales_staff":
-        permission_directives = (
-            "- Quyền Bán hàng (sales_staff):\n"
-            f"  + Được tư vấn sản phẩm, kiểm kho và tạo báo giá/đơn hàng < {thresh_formatted}.\n"
-            "  + ⛔ BỊ CHẶN: Xem Báo cáo Doanh số tổng quan toàn công ty."
-        )
-    else:
-        permission_directives = (
-            "- Quyền Khách (viewer):\n"
-            "  + Chỉ tra cứu sản phẩm công khai.\n"
-            "  + ⛔ BỊ CHẶN: Không xem doanh số, không tạo đơn."
-        )
 
     try:
         return base_template.format(
             full_name=full_name,
             email=email,
-            role=role,
-            groups_summary=groups_summary,
-            approval_threshold_formatted=thresh_formatted,
-            permission_directives=permission_directives
+            groups_block=groups_block,
+            approval_threshold=thresh_str,
         )
     except Exception:
-        return base_template + f"\nUser: {full_name} ({email}) | Role: {role}\nNgưỡng duyệt: {thresh_formatted}\n{permission_directives}"
+        # Fallback nếu custom template thiếu placeholder
+        return (
+            DEFAULT_BASE_PROMPT.format(
+                full_name=full_name,
+                email=email,
+                groups_block=groups_block,
+                approval_threshold=thresh_str,
+            )
+        )

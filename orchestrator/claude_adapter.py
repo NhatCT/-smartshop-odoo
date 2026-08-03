@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import anthropic
 from gateway.services.notification_service import NotificationService
@@ -17,11 +18,10 @@ class ClaudeAdapter:
         self.notification_service = NotificationService()
 
     async def handle_message(self, user_id: str, text: str, user_info: dict, mcp_session) -> str:
-        role = user_info.get("official_role", "viewer")
         u_info = user_info.get("user_info", {})
-        
-        # Sinh Dynamic System Prompt chuẩn Enterprise từ Odoo User Context
-        system_prompt = build_system_prompt(u_info, role)
+
+        # Sinh System Prompt từ raw Odoo groups — Claude tự suy luận quyền
+        system_prompt = build_system_prompt(u_info)
 
         # Nếu nhận lệnh duyệt từ Webhook
         if text.startswith("[MANAGER_APPROVED]"):
@@ -101,20 +101,21 @@ class ClaudeAdapter:
             # Xử lý Trigger Approval nếu có
             if "[NEED_APPROVAL]" in final_text:
                 try:
-                    import re
                     match = re.search(r'\[NEED_APPROVAL\]\s*(.*)', final_text)
                     if match:
                         data = json.loads(match.group(1))
+                        total = data.get("total", 0)
+                        total_fmt = f"{float(total):,.0f} VNĐ" if total else "N/A"
                         manager_chat_id = os.getenv("ADMIN_CHAT_ID", "123456789")
                         success = self.notification_service.send_approval_request(
                             data.get("order_name", "Order"),
-                            data.get("total", 0),
+                            total,
                             u_info.get("full_name", user_id),
                             manager_chat_id
                         )
                         if success:
                             final_text = final_text.replace(match.group(0), "")
-                            final_text += "\n\n⏳ **Đơn hàng > 20 triệu đã được chuyển đến n8n để xin phép Manager.** Vui lòng chờ phê duyệt."
+                            final_text += f"\n\n⏳ **Đơn hàng {total_fmt} đã được chuyển để xin phép Manager.** Vui lòng chờ phê duyệt."
                         else:
                             final_text += "\n\n⚠️ Lỗi gọi webhook n8n xin phép duyệt."
                 except Exception as e:

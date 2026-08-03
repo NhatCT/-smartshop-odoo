@@ -1,4 +1,4 @@
-
+# Map vai trò → tools MCP được phép (tham khảo, không enforce ở code)
 ROLE_TOOLS_MAP = {
     "sales_manager":    ["search_read", "create", "write", "action_confirm", "eval_analytics"],
     "sales_staff":      ["search_read", "create", "write"],
@@ -7,22 +7,10 @@ ROLE_TOOLS_MAP = {
     "viewer":           ["search_read"],
 }
 
-PREDEFINED_EMAIL_ROLES = {
-    "nhatlovely2017@gmail.com":     "sales_manager",
-    "anthony@technext.asia":        "sales_manager",
-    "2251052082nhat@ou.edu.vn":     "inventory_staff",
-    "thanhnhat.career@gmail.com":   "accountant",
-}
+# Tài khoản yêu cầu Admin duyệt trước khi được bind vào Telegram.
+# Danh sách này có thể chuyển vào Odoo ir.config_parameter sau.
+REQUIRES_ADMIN_APPROVAL_EMAILS: set = set()
 
-# Các tài khoản con cần admin duyệt trước khi được bind vào Telegram.
-REQUIRES_ADMIN_APPROVAL_EMAILS = {
-    "2251052082nhat@ou.edu.vn",
-    "thanhnhat.career@gmail.com",
-}
-
-PREDEFINED_EMAIL_NAMES = {
-    "nhatlovely2017@gmail.com":     "Nguyễn Thành Nhật (Sales Manager)",
-    "anthony@technext.asia":        "Anthony (Quản trị viên / Executive Manager)",
-    "2251052082nhat@ou.edu.vn":     "Nguyễn Thành Nhật (Nhân viên Kho)",
-    "thanhnhat.career@gmail.com":   "Nguyễn Thành Nhật (Kế toán - Đã nghỉ)",
-}
+# Lưu ý: email_roles và email_names đã được xóa.
+# Thông tin vai trò được đọc trực tiếp từ Odoo res.users / res.groups
+# bởi PermissionService, không hardcode trong code.
