@@ -7,7 +7,7 @@ import hmac
 import os
 import time
 
-from gateway.config.constants import PREDEFINED_EMAIL_ROLES, ROLE_TOOLS_MAP
+from gateway.config.constants import ROLE_TOOLS_MAP
 from gateway.services.binding_service import get_bindings, save_bindings
 from gateway.services.otp_service import OTPService
 from gateway.services.permission_service import PermissionService
@@ -56,7 +56,6 @@ class SecurityGateway:
 __all__ = [
     "SecurityGateway",
     "ROLE_TOOLS_MAP",
-    "PREDEFINED_EMAIL_ROLES",
     "generate_approval_token",
     "verify_approval_token",
     "get_bindings",

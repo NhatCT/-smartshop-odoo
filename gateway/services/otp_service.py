@@ -1,11 +1,7 @@
 import time
 import random
 from gateway.services.notification_service import NotificationService
-from gateway.config.constants import (
-    PREDEFINED_EMAIL_NAMES,
-    PREDEFINED_EMAIL_ROLES,
-    REQUIRES_ADMIN_APPROVAL_EMAILS,
-)
+from gateway.config.constants import REQUIRES_ADMIN_APPROVAL_EMAILS
 from gateway.services.binding_service import get_bindings, save_bindings
 
 PENDING_OTP_STORE = {}
@@ -90,13 +86,17 @@ class OTPService:
         from gateway.services.permission_service import PermissionService
         perm_svc = PermissionService()
         user_info = perm_svc.process_incoming_request(telegram_id)
-        role = user_info.get("official_role", "viewer") if isinstance(user_info, dict) else "viewer"
+        u_info = user_info.get("user_info", {}) if isinstance(user_info, dict) else {}
+        full_name = u_info.get("full_name", email)
+        groups = u_info.get("odoo_groups", [])
+        groups_display = ", ".join(groups[:3]) if groups else "Không có nhóm"
 
         return True, (
-            f"✅ **XÁC THỰC THÀNH CÔNG!**\n\n"
-            f"Tài khoản Odoo: `{email}`\n"
-            f"Phân quyền: **{role.upper()}**\n\n"
-            f"Bây giờ bạn đã có thể bắt đầu chat với tôi để tra cứu thông tin!"
+            f"\u2705 **X\u00c1C TH\u1ef0C TH\u00c0NH C\u00d4NG!**\n\n"
+            f"T\u00e0i kho\u1ea3n Odoo: `{email}`\n"
+            f"H\u1ecd t\u00ean: **{full_name}**\n"
+            f"Nh\u00f3m quy\u1ec1n Odoo: `{groups_display}`\n\n"
+            f"B\u00e2y gi\u1edd b\u1ea1n \u0111\u00e3 c\u00f3 th\u1ec3 b\u1eaft \u0111\u1ea7u chat v\u1edbi t\u00f4i \u0111\u1ec3 tra c\u1ee9u th\u00f4ng tin!"
         )
 
     def approve_pending_registration(self, telegram_id, approver_name="admin"):

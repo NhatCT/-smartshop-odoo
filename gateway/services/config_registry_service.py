@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from data_layer.connectors.odoo_rpc import OdooClient
-from gateway.config.constants import ROLE_TOOLS_MAP, PREDEFINED_EMAIL_ROLES, PREDEFINED_EMAIL_NAMES
+from gateway.config.constants import ROLE_TOOLS_MAP
 
 TELEGRAM_BINDING_FILE = Path(__file__).resolve().parents[2] / "telegram_bindings.json"
 
@@ -51,8 +51,6 @@ class ConfigRegistryService:
 
     def get_policy_config(self) -> dict:
         fallback = {
-            "email_roles": PREDEFINED_EMAIL_ROLES,
-            "email_names": PREDEFINED_EMAIL_NAMES,
             "role_tools": ROLE_TOOLS_MAP
         }
         val = self.get_parameter(PARAM_POLICY_KEY)
@@ -61,8 +59,6 @@ class ConfigRegistryService:
         try:
             parsed = json.loads(val)
             return {
-                "email_roles": parsed.get("email_roles", PREDEFINED_EMAIL_ROLES),
-                "email_names": parsed.get("email_names", PREDEFINED_EMAIL_NAMES),
                 "role_tools": parsed.get("role_tools", ROLE_TOOLS_MAP)
             }
         except Exception as e:
