@@ -66,6 +66,13 @@ class BaseAgent(ABC):
         """
         ...
 
+    try:
+        from langfuse import observe
+    except ImportError:
+        def observe(*args, **kwargs):
+            return lambda f: f
+
+    @observe(as_type="agent")
     async def execute(
         self,
         user_id: str,

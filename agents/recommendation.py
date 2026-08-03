@@ -1,7 +1,11 @@
 """
-Recommendation Agent — Tầng 3: Workflow Agents
-Skill: Tìm kiếm sản phẩm, kiểm kho, tra giá, tính Sales Velocity.
-Pipeline position: FIRST (Recommendation → Validation → Fulfillment)
+Recommendation Agent với Langfuse @observe Tracing.
+Tuân theo Langfuse Skill best practices:
+- Tên observation ổn định: "recommend-products", "search-odoo-products"
+- session_id theo channel+user
+- input = user_text (clean, không dump toàn bộ args)
+- Tags: channel, role
+- PII masked trước khi vào trace
 """
 
 from __future__ import annotations
@@ -11,8 +15,8 @@ import anthropic
 import os
 
 from .base_agent import BaseAgent, AgentResult
+from observability.langfuse_setup import mask_sensitive_text, get_observe_context
 
-# Lazy import để tránh circular
 _anthropic_client = None
 
 
@@ -25,7 +29,6 @@ def _get_anthropic_client():
 
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 
-# System prompt tối ưu cho Recommendation Agent
 RECOMMENDATION_SYSTEM_PROMPT = """\
 Bạn là Recommendation Agent của SmartShop Odoo 19.
 Nhiệm vụ: Tra cứu sản phẩm, kiểm kho và tư vấn.
@@ -50,7 +53,6 @@ class RecommendationAgent(BaseAgent):
 
     def __init__(self):
         super().__init__(name="recommendation")
-        # Tool schemas micro — giảm token
         self._tool_schemas = [
             {
                 "name": "search_records",
@@ -79,6 +81,19 @@ class RecommendationAgent(BaseAgent):
     ) -> AgentResult:
         role = user_info.get("official_role", "viewer")
         full_name = user_info.get("user_info", {}).get("full_name", "")
+        channel = context.get("channel", "telegram") if context else "telegram"
+
+        # Langfuse @observe — dùng langfuse_context nếu có
+        try:
+            from langfuse import get_client
+            lf_client = get_client()
+            if lf_client:
+                lf_client.update_current_span(
+                    name="recommend-products",  # Tên ổn định, không chứa dynamic values
+                    input=mask_sensitive_text(user_text[:500]),
+                )
+        except Exception:
+            pass  # Graceful degradation nếu Langfuse offline
 
         system_blocks = [
             {
@@ -91,7 +106,7 @@ class RecommendationAgent(BaseAgent):
         messages = [{"role": "user", "content": user_text}]
         client = _get_anthropic_client()
 
-        for _ in range(3):  # max 3 tool loops
+        for _ in range(3):
             response = await asyncio.to_thread(
                 lambda: client.messages.create(
                     model=CLAUDE_MODEL,
@@ -106,9 +121,18 @@ class RecommendationAgent(BaseAgent):
                 text = "".join(
                     b.text for b in response.content if hasattr(b, "text")
                 )
-                # Phát hiện intent tạo đơn hàng
                 needs_order = "[CẦN_TẠO_ĐƠN]" in text
                 clean_text = text.replace("[CẦN_TẠO_ĐƠN]", "").strip()
+
+                # Cập nhật output của trace
+                try:
+                    from langfuse import get_client
+                    lf_client = get_client()
+                    if lf_client:
+                        lf_client.update_current_span(output=clean_text[:500])
+                except Exception:
+                    pass
+
                 return AgentResult(
                     success=True,
                     response=clean_text,
@@ -120,6 +144,18 @@ class RecommendationAgent(BaseAgent):
                 tool_results = []
                 for block in response.content:
                     if block.type == "tool_use":
+                        # Span cho tool call — tên: "search-odoo-{model}"
+                        tool_model = (block.input or {}).get("model", "record")
+                        try:
+                            from langfuse import get_client
+                            lf_client = get_client()
+                            if lf_client:
+                                lf_client.update_current_span(
+                                    name=f"search-odoo-{tool_model.replace('.', '-')}",
+                                )
+                        except Exception:
+                            pass
+
                         try:
                             res = await mcp_session.call_tool(block.name, block.input or {})
                             output = res.content[0].text if res.content else "OK"

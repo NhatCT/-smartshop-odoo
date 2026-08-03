@@ -1,14 +1,20 @@
 """
-SmartShop Enterprise AI Gateway — Main Entrypoint (v2.0 Multi-Layer Architecture)
-=================================================================================
+SmartShop Enterprise AI Gateway — Main Entrypoint (v2.1 + Langfuse Tracing)
+=============================================================================
 KIẾN TRÚC 6 TẦNG:
   Layer 1: Channels    → Telegram + Odoo Live Chat + API Webhook
   Layer 2: Gateway     → Auth (OTP/RBAC) + Rate Limit + Idempotency
   Layer 3: Agents      → Recommendation → Validation → Fulfillment
   Layer 4: Skills      → Sales, Inventory, Accounting (JIT loading)
   Layer 5: MCP         → Odoo MCP (erpipe-org) + 30min Cache + Fallback
-  Layer 6: Observability → LangFuse Cost Tracking + Odoo Chatter Audit
-=================================================================================
+  Layer 6: Observability → Langfuse Tracing + Odoo Chatter Audit
+
+IMPORT ORDER (BẮT BUỘC theo Langfuse Skill):
+  1. os, sys, threading, asyncio
+  2. load_env()  ← load .env trước
+  3. setup_langfuse_tracing()  ← init Langfuse & AnthropicInstrumentor TRƯỚC anthropic
+  4. tất cả imports khác
+=============================================================================
 """
 
 import os
@@ -22,10 +28,17 @@ try:
 except Exception:
     pass
 
+# BƯỚC 1: Load .env trước tất cả
 load_env()
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+# BƯỚC 2: Setup Langfuse + AnthropicInstrumentor TRƯỚC KHI import anthropic
+# (Per Langfuse Skill: "Import Langfuse AFTER loading environment variables,
+#  Import Langfuse and call its setup BEFORE importing OpenAI/Anthropic client")
+from observability.langfuse_setup import setup_langfuse_tracing, flush_traces, mask_sensitive_text, get_observe_context
+_langfuse_active = setup_langfuse_tracing()
+
+# BƯỚC 3: Sau đó mới import các module còn lại
+from fastapi import FastAPI
 import uvicorn
 
 # Layer 1: Channel imports
@@ -43,7 +56,7 @@ from mcp_layer import MCPClientWrapper
 from agents import RecommendationAgent, ValidationAgent, FulfillmentAgent
 
 # Layer 6: Observability
-from observability import get_tracker, get_audit_logger
+from observability import get_audit_logger
 
 # ------------------------------------------------------------------
 # FastAPI App
@@ -51,7 +64,7 @@ from observability import get_tracker, get_audit_logger
 app = FastAPI(
     title="SmartShop Enterprise AI Gateway",
     description="Multi-Channel AI Gateway for Odoo 19 SaaS Enterprise",
-    version="2.0.0"
+    version="2.1.0"
 )
 
 # Mount Webhook Channel router
@@ -61,34 +74,41 @@ app.include_router(webhook_router)
 @app.get("/")
 def read_root():
     return {
-        "service": "SmartShop Enterprise AI Gateway v2.0",
-        "architecture": "6-Layer Multi-Channel",
+        "service": "SmartShop Enterprise AI Gateway v2.1",
+        "architecture": "6-Layer Multi-Channel + Langfuse Tracing",
         "channels": ["Telegram", "Odoo Live Chat", "API Webhook"],
         "status": "online",
-        "health": "healthy"
+        "langfuse_tracing": _langfuse_active,
     }
 
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "version": "2.0"}
+    return {"status": "ok", "version": "2.1"}
 
 
 @app.get("/metrics")
 def get_metrics():
-    """Endpoint metrics cho monitoring (LangFuse + MCP cache stats)."""
-    tracker = get_tracker()
+    """Metrics endpoint cho monitoring — Langfuse + MCP cache stats."""
+    from observability.langfuse_setup import get_langfuse
+    lf = get_langfuse()
     return {
-        "session_stats": tracker.get_session_stats(),
-        "rate_limiter": "active"
+        "langfuse_active": _langfuse_active,
+        "mcp_ready": _mcp_wrapper is not None,
     }
 
 
+@app.on_event("shutdown")
+async def on_shutdown():
+    """Flush Langfuse traces khi server shutdown — tránh mất traces."""
+    flush_traces()
+
+
 # ------------------------------------------------------------------
-# Core Message Handler (shared across all channels)
+# Core Message Handler — @observe decorated cho Langfuse tracing
 # ------------------------------------------------------------------
 
-# Global agents
+# Global agents — singleton
 _recommendation_agent = RecommendationAgent()
 _validation_agent = ValidationAgent()
 _fulfillment_agent = FulfillmentAgent()
@@ -97,78 +117,143 @@ _fulfillment_agent = FulfillmentAgent()
 _mcp_wrapper: MCPClientWrapper | None = None
 
 
+try:
+    from langfuse.decorators import observe
+except ImportError:
+    def observe(*args, **kwargs):
+        return lambda f: f
+
+@observe()
 async def handle_message(channel_msg) -> str:
     """
-    Central message handler — nhận ChannelMessage từ bất kỳ channel nào,
-    chạy qua Gateway → Agent Pipeline → trả về response text.
-    """
-    from channels.base_channel import ChannelMessage
+    Central message handler với Langfuse @observe tracing.
 
+    Trace structure (theo best practices):
+    - Trace: "smartshop-chat-turn" (1 trace per turn, per channel)
+      - user_id: masked (no PII leak)
+      - session_id: channel+user_id (groups turns per conversation)
+      - tags: ["channel:telegram", "role:sales_staff", "smartshop"]
+      - input: user message text (clean, not full args dump)
+      - output: final assistant response
+    """
     user_id = channel_msg.user_id
     text = channel_msg.text
     channel = channel_msg.channel
 
-    tracker = get_tracker()
-    trace = tracker.start_trace(
-        user_id=user_id,
-        channel=channel,
-        input_text=text
-    )
+    # Xử lý callback query ngay (không cần tracing)
+    if channel_msg.metadata.get("type") == "callback_query":
+        return await _handle_approval_callback(text, user_id)
 
     # Layer 2: Auth Gateway
     gateway = SecurityGateway()
-
-    # Bỏ qua auth check cho callback queries
-    if channel_msg.metadata.get("type") == "callback_query":
-        # Xử lý approve/reject callback
-        return await _handle_approval_callback(text, user_id)
-
     auth = gateway.process_incoming_request(user_id, text)
     if not auth["allowed"]:
         return auth["reason"]
 
     user_info = auth
+    role = user_info.get("official_role", "viewer")
+
+    obs_ctx = get_observe_context(user_id, channel, role)
+
+    if _langfuse_active:
+        from langfuse import propagate_attributes, get_client
+        
+        # Propagate attributes (v4 SDK pattern)
+        with propagate_attributes(
+            user_id=obs_ctx["user_id"],
+            session_id=obs_ctx["session_id"],
+            tags=obs_ctx["tags"],
+            trace_name="smartshop-chat-turn"
+        ):
+            return await _traced_handle_message(channel_msg, obs_ctx)
+    else:
+        return await _traced_handle_message(channel_msg, obs_ctx)
+
+try:
+    from langfuse import observe, get_client
+except ImportError:
+    def observe(*args, **kwargs):
+        return lambda f: f
+    def get_client(*args, **kwargs):
+        return None
+
+@observe()
+async def _traced_handle_message(channel_msg, obs_ctx) -> str:
+    user_id = channel_msg.user_id
+    text = channel_msg.text
+    channel = channel_msg.channel
+
+    langfuse = get_client()
+    if langfuse:
+        try:
+            from observability.langfuse_setup import mask_sensitive_text
+            langfuse.update_current_span(
+                input=mask_sensitive_text(text[:500])
+            )
+        except Exception:
+            pass
 
     # Layer 3: Agent Pipeline
     if _mcp_wrapper is None:
-        return "⚠️ MCP session chưa sẵn sàng. Vui lòng thử lại sau vài giây."
+        response = "⚠️ MCP session chưa sẵn sàng. Vui lòng thử lại sau vài giây."
+        _update_trace_output(response)
+        return response
 
-    # Bước 1: Recommendation Agent
-    rec_span = trace.span("recommendation", text)
+    # Agent context (truyền channel cho recommendation agent tracing)
+    agent_context = {"channel": channel}
+
+    # Bước 1: Recommendation Agent — span type "agent" (multi-agent subagent rule)
+    if _langfuse_active:
+        try:
+            from langfuse import get_client
+            lf_client = get_client()
+            if lf_client:
+                lf_client.update_current_span(name="recommend-products")
+        except Exception:
+            pass
+
     rec_result = await _recommendation_agent.execute(
-        user_id, text, user_info, _mcp_wrapper
+        user_id, text, user_info, _mcp_wrapper, context=agent_context
     )
-    rec_span.finish(rec_result.response[:200])
 
-    # Nếu không cần tạo đơn → trả lời ngay
     if rec_result.next_agent is None:
-        trace.finish(rec_result.response[:500])
+        _update_trace_output(rec_result.response)
         return rec_result.response
 
-    # Bước 2: Fulfillment Agent (khi user muốn tạo đơn)
+    # Bước 2: Validation Agent
     if rec_result.next_agent == "fulfillment":
-        # Validation trước
         val_result = await _validation_agent.execute(
             user_id, text, user_info, _mcp_wrapper,
             context=rec_result.metadata
         )
 
         if not val_result.success or val_result.needs_approval:
-            trace.finish(val_result.response[:500])
+            _update_trace_output(val_result.response)
             return val_result.response
 
-        # Fulfillment
-        ful_span = trace.span("fulfillment", text)
+        # Bước 3: Fulfillment Agent
         ful_result = await _fulfillment_agent.execute(
             user_id, text, user_info, _mcp_wrapper,
             context=val_result.metadata
         )
-        ful_span.finish(ful_result.response[:200])
-        trace.finish(ful_result.response[:500])
+        _update_trace_output(ful_result.response)
         return ful_result.response
 
-    trace.finish(rec_result.response[:500])
+    _update_trace_output(rec_result.response)
     return rec_result.response
+
+
+def _update_trace_output(response: str) -> None:
+    """Cập nhật output của trace hiện tại (per best practices: root trace có output)."""
+    if not _langfuse_active:
+        return
+    try:
+        from langfuse import get_client
+        lf_client = get_client()
+        if lf_client:
+            lf_client.update_current_span(output=response[:500])
+    except Exception:
+        pass
 
 
 async def _handle_approval_callback(callback_data: str, approver_id: str) -> str:
@@ -178,7 +263,7 @@ async def _handle_approval_callback(callback_data: str, approver_id: str) -> str
     if len(parts) < 3:
         return "❌ Callback không hợp lệ."
 
-    action = parts[0]  # "approve" hoặc "reject"
+    action = parts[0]
     order_name = "_".join(parts[1:-1])
     token = parts[-1]
 
@@ -193,7 +278,7 @@ async def _handle_approval_callback(callback_data: str, approver_id: str) -> str
 
 
 # ------------------------------------------------------------------
-# Bot Runners (chạy trong background threads)
+# Bot Runners
 # ------------------------------------------------------------------
 
 def run_telegram_bot():
@@ -212,7 +297,7 @@ def run_telegram_bot():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 _mcp_wrapper = MCPClientWrapper(session)
-                print(f"✅ [MCP] Session ready! Cache TTL=30min, Fallback=active")
+                print("✅ [MCP] Session ready! Cache TTL=30min, Fallback=active")
 
                 from channels.telegram_channel import TelegramChannel
                 telegram = TelegramChannel()
@@ -222,15 +307,16 @@ def run_telegram_bot():
         asyncio.run(_telegram_loop())
     except Exception as e:
         print(f"❌ [TELEGRAM BOT ERROR]: {e}")
+    finally:
+        # Flush traces khi Telegram bot shutdown
+        flush_traces()
 
 
 def run_livechat_bot():
-    """Chạy Odoo Live Chat Channel trong thread riêng (không cần MCP session)."""
+    """Chạy Odoo Live Chat Channel trong thread riêng."""
     async def _livechat_loop():
-        # Live Chat dùng OdooClient trực tiếp (không qua MCP)
-        # Chờ MCP wrapper sẵn sàng trước
         import time
-        for _ in range(30):  # Chờ tối đa 30 giây
+        for _ in range(30):
             if _mcp_wrapper is not None:
                 break
             await asyncio.sleep(1)
@@ -246,20 +332,10 @@ def run_livechat_bot():
 
 
 def setup_webhook_channel():
-    """Đăng ký handler cho Webhook Channel (không cần thread riêng — FastAPI xử lý)."""
+    """Đăng ký handler cho Webhook Channel."""
     from channels.webhook_channel import WebhookChannel
     webhook = WebhookChannel()
-
-    async def _sync_handle(msg):
-        return await handle_message(msg)
-
-    # Set async handler — webhook channel chạy trong FastAPI event loop
-    import asyncio
-
-    async def _async_setup():
-        webhook.set_handler(handle_message)
-
-    # Schedule setup sau khi FastAPI starts
+    webhook.set_handler(handle_message)
     return webhook
 
 
@@ -269,17 +345,17 @@ def setup_webhook_channel():
 
 if __name__ == "__main__":
     print("=" * 70)
-    print("  SMARTSHOP ENTERPRISE AI GATEWAY v2.0 — 6-LAYER ARCHITECTURE")
+    print("  SMARTSHOP ENTERPRISE AI GATEWAY v2.1 — 6-LAYER ARCHITECTURE")
     print("=" * 70)
     print("  Layer 1: Telegram + Odoo Live Chat + API Webhook")
     print("  Layer 2: Auth (OTP/RBAC) + Rate Limit (30 req/min) + Idempotency")
     print("  Layer 3: Recommendation → Validation → Fulfillment Agents")
     print("  Layer 4: Sales + Inventory + Accounting Skills (JIT)")
     print("  Layer 5: Odoo MCP + 30min TTL Cache + Fallback")
-    print("  Layer 6: LangFuse Cost Tracking + Odoo Chatter Audit")
+    print(f"  Layer 6: Langfuse Tracing {'✅ ACTIVE' if _langfuse_active else '⚠️ DISABLED'} + Odoo Chatter Audit")
     print("=" * 70)
 
-    # Khởi động Telegram Bot (có MCP session) trong background thread
+    # Khởi động Telegram Bot trong background thread
     telegram_thread = threading.Thread(target=run_telegram_bot, daemon=True)
     telegram_thread.start()
 
@@ -290,7 +366,7 @@ if __name__ == "__main__":
     # Đăng ký Webhook handler
     setup_webhook_channel()
 
-    # Khởi động FastAPI Web Server (main thread — Render health checks)
+    # Khởi động FastAPI Web Server (main thread)
     port = int(os.getenv("PORT", 8000))
     print(f"\n🚀 Web Gateway starting on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
