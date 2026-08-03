@@ -46,8 +46,9 @@ class ClaudeAdapter:
 
         client = get_client()
         try:
+            model_name = os.getenv("CLAUDE_MODEL", "claude-3-5-haiku-20241022")
             response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model=model_name,
                 max_tokens=1000,
                 system=SYSTEM_PROMPT + f"\nQuyền của User: {role}",
                 messages=[{"role": "user", "content": text}],

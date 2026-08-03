@@ -76,6 +76,8 @@ class TelegramChannel(BaseChannel):
             return True
         except Exception as e:
             print(f"[TELEGRAM SEND FAILED] {user_id}: {e}")
+            if parse_mode:
+                return await self.send_message(user_id, text, metadata, parse_mode=None)
             return False
 
     async def run(self, message_handler: Callable[[ChannelMessage], Awaitable[str]]) -> None:
