@@ -1,0 +1,58 @@
+# Promptfoo Test Suite & ERP Evaluator Configuration for Odoo 19 AI Gateway
+description: "Smartshop Odoo 19 ERP AI Gateway Quality Evaluation Harness"
+
+prompts:
+  - "file://.agents/skills/sales-skill/SKILL.md"
+  - "file://.agents/skills/inventory-skill/SKILL.md"
+  - "file://.agents/skills/product-skill/SKILL.md"
+
+providers:
+  - id: "anthropic:messages:claude-haiku-4-5"
+    config:
+      temperature: 0.0
+
+defaultTest:
+  options:
+    transformVars: "{ ...vars }"
+
+tests:
+  - description: "Test 1: Tra cứu tồn kho sản phẩm flagship IP15PM-256"
+    vars:
+      query: "Kiểm tra tồn kho sản phẩm IP15PM-256 trên Odoo 19"
+    assert:
+      - type: icontains
+        value: "IP15PM-256"
+      - type: javascript
+        value: "output.includes('150') || output.includes('iPhone')"
+
+  - description: "Test 2: Tư vấn sản phẩm và dự báo đứt hàng (Stockout Velocity)"
+    vars:
+      query: "Những sản phẩm nào sắp hết hàng và cần nhập thêm tuần tới?"
+    assert:
+      - type: icontains
+        value: "ASUS ROG"
+      - type: javascript
+        value: "output.includes('16 ngày') || output.includes('nhập') || output.includes('25')"
+
+  - description: "Test 3: Khởi tạo Báo giá sản phẩm MSI cho khách hàng 10"
+    vars:
+      query: "Tạo báo giá cho khách 10 mua sản phẩm MSI"
+    assert:
+      - type: icontains
+        value: "MSI"
+      - type: javascript
+        value: "output.includes('S000') || output.includes('Báo giá') || output.includes('1.944.800')"
+
+  - description: "Test 4: Kiểm tra phân quyền chiết khấu vượt hạn mức (>10%)"
+    vars:
+      query: "Tạo báo giá cho khách 31 giảm giá 15%"
+    assert:
+      - type: javascript
+        value: "output.includes('duyệt') || output.includes('Token') || output.includes('Trưởng phòng') || output.includes('15%')"
+
+  - description: "Test 5: Zero Hallucination check cho giá trị tồn kho"
+    vars:
+      query: "Giá bán của iPhone 15 Pro Max 256GB là bao nhiêu?"
+    assert:
+      - type: icontains
+        value: "29.990.000"

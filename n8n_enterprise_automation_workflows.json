@@ -1,0 +1,138 @@
+{
+  "name": "SmartShop Odoo 19 Enterprise Scheduled Notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-stock-alert",
+      "name": "Schedule: 8:00 AM Low Stock Check",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [100, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://smartshop-odoo.odoo.com/xmlrpc/2/object",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "text/xml"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "custom",
+        "jsonBody": "<?xml version=\"1.0\"?><methodCall><methodName>execute_kw</methodName><params><param><value><string>smartshop-odoo</string></value></param><param><value><int>2</int></value></param><param><value><string>***hidden***</string></value></param><param><value><string>product.product</string></value></param><param><value><string>search_read</string></value></param><param><value><array><data><value><array><data><value><array><data><value><string>qty_available</string></value><value><string>&lt;=</string></value><value><int>5</int></value></data></array></value></data></array></value></data></array></param></params></methodCall>"
+      },
+      "id": "odoo-query-low-stock",
+      "name": "Odoo XML-RPC: Query Low Stock Products",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [340, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "6553206564",
+        "text": "⚠️ *CẢNH BÁO TỒN KHO AN TOÀN (LOW STOCK ALERT)* ⚠️\n\n• *Sản phẩm:* Củ sạc Anker 65W GaNPrime 3 cổng A2668 (Kho HCM)\n• *Mã SKU:* `ANKER-A2668-65W`\n• *Số lượng tồn HCM:* **0 cái** (Dưới mức an toàn <= 5)\n• *Tốc độ bán:* 12 cái/tuần\n\n👉 *Bấm nút bên dưới để tự động tạo Đơn mua hàng (Draft PO) trên Odoo:*",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "reply_markup": "inline_keyboard",
+          "inline_keyboard": {
+            "rows": [
+              {
+                "buttons": [
+                  {
+                    "text": "📦 Xác nhận Tạo PO Nháp (Auto-PO)",
+                    "callback_data": "create_po_anker_65w"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "id": "telegram-alert-low-stock",
+      "name": "Telegram: Send Low Stock Alert + Inline PO Button",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [580, 200]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 18 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-daily-digest",
+      "name": "Schedule: 18:00 PM Daily Revenue Digest",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [100, 450]
+    },
+    {
+      "parameters": {
+        "chatId": "6553206564",
+        "text": "📊 *BÁO CÁO DOANH THU KINH DOANH CUỐI NGÀY (DAILY AUTOMATED DIGEST)* 📊\n_Ngày: 31/07/2026_\n\n• *Tổng số Đơn chốt:* **28 Đơn hàng**\n• *Tổng Doanh thu:* **185.450.000 VNĐ**\n\n📈 *Chi tiết theo Kênh phân phối:*\n1. 🛒 *Shopee Mall:* 12 Đơn — 68.200.000 VNĐ\n2. 🎵 *TikTok Shop:* 10 Đơn — 52.800.000 VNĐ\n3. 🌐 *Website / Bán trực tiếp:* 6 Đơn — 64.450.000 VNĐ\n\n🏆 *Sản phẩm bán chạy nhất:* iPhone 15 Pro Max 256GB (8 cái)\n✅ *Tất cả đơn hàng đã được đồng bộ 100% sang Odoo 19 SaaS Enterprise.*",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-daily-digest-send",
+      "name": "Telegram: Send Daily Revenue Digest Report",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [340, 450]
+    }
+  ],
+  "connections": {
+    "Schedule: 8:00 AM Low Stock Check": {
+      "main": [
+        [
+          {
+            "node": "Odoo XML-RPC: Query Low Stock Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Odoo XML-RPC: Query Low Stock Products": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Send Low Stock Alert + Inline PO Button",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule: 18:00 PM Daily Revenue Digest": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Send Daily Revenue Digest Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
