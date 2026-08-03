@@ -12,9 +12,8 @@ from __future__ import annotations
 import os
 import json
 import asyncio
-import time
 import urllib.request
-from typing import Callable, Awaitable, Any
+from typing import Callable, Awaitable
 
 from .base_channel import BaseChannel, ChannelMessage
 from gateway import SecurityGateway, RateLimiter, IdempotencyGuard, get_rate_limiter
@@ -51,15 +50,16 @@ class TelegramChannel(BaseChannel):
         user_id: str,
         text: str,
         metadata: dict | None = None,
-        parse_mode: str = "Markdown"
+        parse_mode: str | None = "Markdown"
     ) -> bool:
         """Gửi tin nhắn về Telegram."""
         url = f"{BASE_URL}/sendMessage"
         payload = {
             "chat_id": user_id,
             "text": text,
-            "parse_mode": parse_mode
         }
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
         # Thêm inline keyboard nếu có
         if metadata and metadata.get("reply_markup"):
             payload["reply_markup"] = json.dumps(metadata["reply_markup"])
@@ -75,7 +75,7 @@ class TelegramChannel(BaseChannel):
             )
             return True
         except Exception as e:
-            print(f"   ❌ [TELEGRAM SEND FAILED] {user_id}: {e}")
+            print(f"[TELEGRAM SEND FAILED] {user_id}: {e}")
             return False
 
     async def run(self, message_handler: Callable[[ChannelMessage], Awaitable[str]]) -> None:
@@ -173,37 +173,38 @@ class TelegramChannel(BaseChannel):
         if lower.startswith("/register"):
             parts = text.split()
             if len(parts) < 2:
-                await self.send_message(user_id, "📧 Cú pháp: `/register email_cua_ban@gmail.com`")
+                await self.send_message(user_id, "Cu phap: /register email_cua_ban@gmail.com", parse_mode=None)
                 return
             ok, msg = self._gateway.request_otp(user_id, parts[1].lower().strip())
-            await self.send_message(user_id, msg.replace("`", "").replace("**", ""))
+            await self.send_message(user_id, msg.replace("`", "").replace("**", ""), parse_mode=None)
             return
 
         if lower.startswith("/verify"):
             parts = text.split()
             if len(parts) < 2:
-                await self.send_message(user_id, "🔑 Cú pháp: `/verify MA_OTP_6_SO`")
+                await self.send_message(user_id, "Cu phap: /verify MA_OTP_6_SO", parse_mode=None)
                 return
             ok, msg = self._gateway.verify_otp_and_bind(user_id, parts[1].strip())
-            await self.send_message(user_id, msg.replace("`", "").replace("**", ""))
+            await self.send_message(user_id, msg.replace("`", "").replace("**", ""), parse_mode=None)
             return
 
         if lower == "/my_role":
-            auth = self._gateway.process_incoming_request(user_id, text)
+            auth = self._gateway.process_incoming_request(user_id)
             if not auth["allowed"]:
-                await self.send_message(user_id, auth["reason"])
+                await self.send_message(user_id, auth["reason"], parse_mode=None)
             else:
                 u = auth["user_info"]
                 await self.send_message(user_id,
                     f"👤 TÀI KHOẢN\n"
                     f"• Tên: {u['full_name']}\n"
                     f"• Vai trò: {u['role'].upper()}\n"
-                    f"• Email: {u['email']}"
+                    f"• Email: {u['email']}",
+                    parse_mode=None
                 )
             return
 
         if lower in ("/clear", "/reset"):
-            await self.send_message(user_id, "🧹 Đã xóa bộ nhớ hội thoại!")
+            await self.send_message(user_id, "Da xoa bo nho hoi thoai!", parse_mode=None)
             return
 
     async def _handle_callback(

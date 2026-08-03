@@ -34,7 +34,7 @@ load_env()
 # BƯỚC 2: Setup Langfuse + AnthropicInstrumentor TRƯỚC KHI import anthropic
 # (Per Langfuse Skill: "Import Langfuse AFTER loading environment variables,
 #  Import Langfuse and call its setup BEFORE importing OpenAI/Anthropic client")
-from observability.tracing.langfuse import setup_langfuse_tracing, flush_traces, mask_sensitive_text, get_observe_context
+from observability.tracing.langfuse import setup_langfuse_tracing, flush_traces, get_observe_context
 _langfuse_active = setup_langfuse_tracing()
 
 # BƯỚC 3: Sau đó mới import các module còn lại
@@ -45,19 +45,25 @@ import uvicorn
 from channels.webhook_channel import webhook_router
 
 # Layer 2: Gateway
-from gateway import SecurityGateway, get_rate_limiter
+from gateway import SecurityGateway
 
 # Layer 5: MCP imports (lazy — thực hiện trong async context)
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-from mcp_layer import MCPClientWrapper
+try:
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+    from data_layer.mcp import MCPClientWrapper
+    _mcp_import_error = None
+except ImportError as exc:
+    ClientSession = None
+    StdioServerParameters = None
+    stdio_client = None
+    MCPClientWrapper = None
+    _mcp_import_error = exc
 
 # Layer 3: Agents
 from orchestrator.claude_adapter import ClaudeAdapter
 
 # Layer 6: Observability
-from observability import get_audit_logger
-
 # ------------------------------------------------------------------
 # FastAPI App
 # ------------------------------------------------------------------
@@ -90,8 +96,6 @@ def health_check():
 @app.get("/metrics")
 def get_metrics():
     """Metrics endpoint cho monitoring — Langfuse + MCP cache stats."""
-    from observability.tracing.langfuse import get_langfuse
-    lf = get_langfuse()
     return {
         "langfuse_active": _langfuse_active,
         "mcp_ready": _mcp_wrapper is not None,
@@ -119,9 +123,13 @@ _mcp_wrapper: MCPClientWrapper | None = None
 
 try:
     from langfuse.decorators import observe
+    from langfuse import get_client
 except ImportError:
     def observe(*args, **kwargs):
         return lambda f: f
+
+    def get_client(*args, **kwargs):
+        return None
 
 @observe()
 async def handle_message(channel_msg) -> str:
@@ -146,7 +154,7 @@ async def handle_message(channel_msg) -> str:
 
     # Layer 2: Auth Gateway
     gateway = SecurityGateway()
-    auth = gateway.process_incoming_request(user_id, text)
+    auth = gateway.process_incoming_request(user_id)
     if not auth["allowed"]:
         return auth["reason"]
 
@@ -156,7 +164,7 @@ async def handle_message(channel_msg) -> str:
     obs_ctx = get_observe_context(user_id, channel, role)
 
     if _langfuse_active:
-        from langfuse import propagate_attributes, get_client
+        from langfuse import propagate_attributes
         
         # Propagate attributes (v4 SDK pattern)
         with propagate_attributes(
@@ -168,14 +176,6 @@ async def handle_message(channel_msg) -> str:
             return await _traced_handle_message(channel_msg, obs_ctx)
     else:
         return await _traced_handle_message(channel_msg, obs_ctx)
-
-try:
-    from langfuse import observe, get_client
-except ImportError:
-    def observe(*args, **kwargs):
-        return lambda f: f
-    def get_client(*args, **kwargs):
-        return None
 
 @observe()
 async def _traced_handle_message(channel_msg, obs_ctx) -> str:
@@ -230,6 +230,10 @@ async def _handle_approval_callback(callback_data: str, approver_id: str) -> str
 
 def run_telegram_bot():
     """Chạy Telegram Channel trong async event loop riêng."""
+    if ClientSession is None or StdioServerParameters is None or stdio_client is None or MCPClientWrapper is None:
+        print(f"❌ [TELEGRAM] MCP package chưa sẵn sàng: {_mcp_import_error}")
+        return
+
     async def _telegram_loop():
         global _mcp_wrapper
         print("🤖 [TELEGRAM] Starting bot + MCP session...")
@@ -261,8 +265,10 @@ def run_telegram_bot():
 
 def run_livechat_bot():
     """Chạy Odoo Live Chat Channel trong thread riêng."""
+    if ClientSession is None or StdioServerParameters is None or stdio_client is None or MCPClientWrapper is None:
+        return
+
     async def _livechat_loop():
-        import time
         for _ in range(30):
             if _mcp_wrapper is not None:
                 break

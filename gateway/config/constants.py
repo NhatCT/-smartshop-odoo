@@ -14,6 +14,12 @@ PREDEFINED_EMAIL_ROLES = {
     "thanhnhat.career@gmail.com":   "accountant",
 }
 
+# Các tài khoản con cần admin duyệt trước khi được bind vào Telegram.
+REQUIRES_ADMIN_APPROVAL_EMAILS = {
+    "2251052082nhat@ou.edu.vn",
+    "thanhnhat.career@gmail.com",
+}
+
 PREDEFINED_EMAIL_NAMES = {
     "nhatlovely2017@gmail.com":     "Nguyễn Thành Nhật (Sales Manager)",
     "anthony@technext.asia":        "Anthony (Quản trị viên / Executive Manager)",

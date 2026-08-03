@@ -11,12 +11,10 @@ hoàn toàn qua Odoo External API chuẩn (GOLDEN RULE #1).
 
 from __future__ import annotations
 import asyncio
-import time
 from typing import Callable, Awaitable
 
 from .base_channel import BaseChannel, ChannelMessage
 from data_layer.connectors.odoo_rpc import OdooClient
-from gateway import SecurityGateway
 
 # Polling interval (giây) — đọc tin nhắn mới mỗi 5 giây
 LIVECHAT_POLL_INTERVAL = 5
@@ -39,9 +37,7 @@ class LiveChatChannel(BaseChannel):
     def __init__(self):
         super().__init__(name="livechat")
         self._odoo = OdooClient()
-        self._gateway = SecurityGateway()
         self._processed_msg_ids: set[int] = set()
-        self._last_check_time = time.time() - LIVECHAT_POLL_INTERVAL
         # Map channel_id → last processed message_id
         self._channel_watermarks: dict[int, int] = {}
 

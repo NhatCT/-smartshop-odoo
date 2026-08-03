@@ -40,11 +40,22 @@ class MCPClientWrapper:
         self._fallback_store: dict[str, dict] = {}  # Stale data fallback
         self._stats = {"cache_hits": 0, "cache_misses": 0, "timeouts": 0, "fallbacks": 0, "errors": 0}
 
-    async def call_tool(self, tool_name: str, tool_input: dict | None = None) -> MCPToolResult:
+    async def list_tools(self):
+        """Delegate tool listing to the underlying MCP session."""
+        return await self._session.list_tools()
+
+    async def call_tool(
+        self,
+        tool_name: str,
+        tool_input: dict | None = None,
+        **kwargs
+    ) -> MCPToolResult:
         """
         Gọi MCP tool với Cache + Fallback + Timeout.
         Interface giống hệt `session.call_tool()` để drop-in replacement.
         """
+        if tool_input is None and "arguments" in kwargs:
+            tool_input = kwargs["arguments"]
         tool_input = tool_input or {}
 
         # 1. Cache check (READ tools only)

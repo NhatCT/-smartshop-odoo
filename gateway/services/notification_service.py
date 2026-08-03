@@ -9,6 +9,7 @@ class NotificationService:
 
     def send_otp_via_n8n(self, to_email, otp_code, employee_name):
         if not self.n8n_otp_url:
+            print("[N8N OTP ERROR] N8N_OTP_WEBHOOK_URL is not configured")
             return False
         try:
             payload = json.dumps({
@@ -20,12 +21,12 @@ class NotificationService:
             with urllib.request.urlopen(req, timeout=8) as resp:
                 return resp.status == 200
         except Exception as e:
-            print(f"⚠️ [N8N OTP ERROR]: {e}")
+            print(f"[N8N OTP ERROR] {e}")
             return False
 
     def send_approval_request(self, order_name, total_amount, employee_name, manager_chat_id):
         if not self.n8n_approval_url:
-            print("⚠️ N8N_APPROVAL_WEBHOOK_URL not configured")
+            print("[N8N APPROVAL ERROR] N8N_APPROVAL_WEBHOOK_URL is not configured")
             return False
         try:
             payload = json.dumps({
@@ -38,5 +39,5 @@ class NotificationService:
             with urllib.request.urlopen(req, timeout=8) as resp:
                 return resp.status == 200
         except Exception as e:
-            print(f"⚠️ [N8N APPROVAL ERROR]: {e}")
+            print(f"[N8N APPROVAL ERROR] {e}")
             return False

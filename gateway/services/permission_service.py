@@ -1,9 +1,9 @@
-from gateway.repositories.binding_repository import get_bindings
-from gateway.repositories.user_repository import UserRepository
+from gateway.services.binding_service import get_bindings
+from gateway.services.config_registry_service import ConfigRegistryService
 
 class PermissionService:
     def __init__(self):
-        self.user_repo = UserRepository()
+        self.registry = ConfigRegistryService()
 
     def process_incoming_request(self, telegram_id: int):
         bindings = get_bindings()
@@ -19,31 +19,24 @@ class PermissionService:
                 )
             }
 
-        user_info = self.user_repo.get_odoo_user_info(email)
+        policy = self.registry.get_policy_config()
+        email_roles = policy.get("email_roles", {})
+        email_names = policy.get("email_names", {})
 
-        if not user_info:
-            return {
-                "allowed": False,
-                "reason": (
-                    f"❌ Không thể xác thực tài khoản `{email}` từ Odoo 19 SaaS.\n"
-                    f"Vui lòng liên hệ Admin."
-                )
-            }
+        role = email_roles.get(email, "viewer")
+        default_name = email.split("@", 1)[0].replace(".", " ").title()
+        full_name = email_names.get(email, default_name)
 
-        if not user_info["is_active_odoo"]:
-            return {
-                "allowed": False,
-                "reason": (
-                    f"🚨 **TÀI KHOẢN BỊ VÔ HIỆU HÓA TRÊN ODOO 19**\n\n"
-                    f"Tài khoản Odoo `{email}` của **{user_info['full_name']}** "
-                    f"đã bị Admin khóa trực tiếp trên Odoo Web UI.\n"
-                    f"Vui lòng liên hệ quản trị viên."
-                )
-            }
+        user_info = {
+            "email": email,
+            "full_name": full_name,
+            "role": role,
+            "is_active_odoo": True,
+        }
 
         return {
             "allowed": True,
             "email": email,
             "user_info": user_info,
-            "official_role": user_info["role"]
+            "official_role": role,
         }

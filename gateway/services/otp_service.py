@@ -1,24 +1,24 @@
 import time
 import random
 from gateway.services.notification_service import NotificationService
-from gateway.repositories.user_repository import UserRepository
-from gateway.repositories.binding_repository import get_bindings, save_bindings
+from gateway.config.constants import (
+    PREDEFINED_EMAIL_NAMES,
+    PREDEFINED_EMAIL_ROLES,
+    REQUIRES_ADMIN_APPROVAL_EMAILS,
+)
+from gateway.services.binding_service import get_bindings, save_bindings
 
 PENDING_OTP_STORE = {}
+PENDING_APPROVAL_STORE = {}
 
 class OTPService:
     def __init__(self):
         self.notification_service = NotificationService()
-        self.user_repo = UserRepository()
 
     def request_otp(self, telegram_id, email):
         email = email.lower().strip()
-        user_info = self.user_repo.get_odoo_user_info(email)
-        if not user_info:
+        if email not in PREDEFINED_EMAIL_ROLES:
             return False, f"❌ Email '{email}' không tồn tại trong hệ thống Odoo 19 SaaS SmartShop!\nVui lòng liên hệ Admin để được tạo tài khoản Odoo."
-        
-        if not user_info["is_active_odoo"]:
-            return False, f"🚨 Tài khoản Odoo '{email}' đã bị VÔ HIỆU HÓA bởi Admin trên Odoo 19!\nMọi truy cập bị từ chối theo chính sách Zero-Trust."
 
         otp_code = f"{random.randint(100000, 999999)}"
         PENDING_OTP_STORE[str(telegram_id)] = {
@@ -27,7 +27,8 @@ class OTPService:
             "timestamp": time.time()
         }
 
-        sent = self.notification_service.send_otp_via_n8n(email, otp_code, user_info["full_name"] if user_info else email)
+        employee_name = PREDEFINED_EMAIL_NAMES.get(email, email)
+        sent = self.notification_service.send_otp_via_n8n(email, otp_code, employee_name)
         if sent:
             print(f"\n✅ [OTP EMAIL SENT via n8n]: Telegram ID [{telegram_id}] | Email: {email}")
             return True, (
@@ -36,7 +37,7 @@ class OTPService:
                 f"`/verify <MÃ_OTP_6_SỐ>`"
             )
         else:
-            print(f"\n⚠️ [N8N EMAIL FAILED] - OTP cho {email}: >>> {otp_code} <<<")
+            print(f"[N8N EMAIL FAILED] OTP delivery failed for {email}")
             return True, (
                 f"🔑 OTP da duoc tao nhung email chua gui duoc (n8n chua kich hoat).\n"
                 f"Vui long lien he Admin de lay ma OTP."
@@ -62,17 +63,57 @@ class OTPService:
             return False, "❌ Mã OTP không khớp. Vui lòng kiểm tra lại!"
 
         email = pending["email"]
+        role = PREDEFINED_EMAIL_ROLES.get(email, "viewer")
+        if email in REQUIRES_ADMIN_APPROVAL_EMAILS:
+            PENDING_APPROVAL_STORE[str_id] = {
+                "email": email,
+                "role": role,
+                "requested_at": time.time(),
+            }
+            del PENDING_OTP_STORE[str_id]
+            return True, (
+                f"⏳ Yêu cầu đăng ký của bạn đã được gửi đến quản trị viên.\n"
+                f"Tài khoản: `{email}`\n"
+                f"Vai trò: **{role.upper()}**\n\n"
+                f"Vui lòng chờ admin phê duyệt trước khi sử dụng."
+            )
+
         bindings = get_bindings()
         bindings[str_id] = email
         save_bindings(bindings)
         del PENDING_OTP_STORE[str_id]
-
-        user_info = self.user_repo.get_odoo_user_info(email)
-        role = user_info["role"] if user_info else "viewer"
 
         return True, (
             f"✅ **XÁC THỰC THÀNH CÔNG!**\n\n"
             f"Tài khoản Odoo: `{email}`\n"
             f"Phân quyền: **{role.upper()}**\n\n"
             f"Bây giờ bạn đã có thể bắt đầu chat với tôi để tra cứu thông tin!"
+        )
+
+    def approve_pending_registration(self, telegram_id, approver_name="admin"):
+        str_id = str(telegram_id)
+        pending = PENDING_APPROVAL_STORE.get(str_id)
+        if not pending:
+            return False, "❌ Không có yêu cầu chờ duyệt nào cho tài khoản này."
+
+        email = pending["email"]
+        bindings = get_bindings()
+        bindings[str_id] = email
+        save_bindings(bindings)
+        del PENDING_APPROVAL_STORE[str_id]
+
+        return True, (
+            f"✅ Tài khoản `{email}` đã được **{approver_name.upper()}** phê duyệt và kích hoạt."
+        )
+
+    def reject_pending_registration(self, telegram_id, approver_name="admin"):
+        str_id = str(telegram_id)
+        pending = PENDING_APPROVAL_STORE.get(str_id)
+        if not pending:
+            return False, "❌ Không có yêu cầu chờ duyệt nào cho tài khoản này."
+
+        email = pending["email"]
+        del PENDING_APPROVAL_STORE[str_id]
+        return True, (
+            f"❌ Tài khoản `{email}` đã bị **{approver_name.upper()}** từ chối."
         )
