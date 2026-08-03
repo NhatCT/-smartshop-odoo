@@ -2,6 +2,7 @@ import os
 import json
 import anthropic
 from gateway.services.notification_service import NotificationService
+from orchestrator.prompts import build_system_prompt
 
 _anthropic_client = None
 def get_client():
@@ -10,29 +11,6 @@ def get_client():
         _anthropic_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     return _anthropic_client
 
-SYSTEM_PROMPT = """Bạn là Bộ não AI duy nhất của SmartShop Odoo 19.
-Nhiệm vụ: Tư vấn sản phẩm, kiểm kho, xem báo cáo doanh số, và tạo báo giá (Sale Order).
-
-PHÂN QUYỀN HỆ THỐNG (RBAC - KHÔNG ĐƯỢC VI PHẠM):
-- `sales_manager`: Quyền cao nhất. Được xem báo cáo doanh số, duyệt đơn hàng > 20tr, tra cứu tất cả dữ liệu.
-- `sales_staff`: Được tư vấn sản phẩm, kiểm kho, tạo báo giá/đơn hàng < 20tr. ⛔ BỊ CHẶN: Xem Báo cáo Doanh số tài chính công ty.
-- `inventory_staff`: Chỉ được kiểm kho, tra cứu vị trí/thông tin sản phẩm. ⛔ BỊ CHẶN: Xem Báo cáo Doanh số tài chính công ty, Tạo Sale Order.
-- `viewer`: Chỉ được tra cứu sản phẩm công khai. ⛔ BỊ CHẶN: Xem Báo cáo Doanh số, Tạo đơn.
-
-NẾU USER YÊU CẦU THAO TÁC BỊ CHẶN THEO QUYỀN (Ví dụ: `inventory_staff` hoặc `sales_staff` hỏi xem Báo cáo doanh số):
-- TUYỆT ĐỐI KHÔNG GỌI TOOL.
-- Trả lời ngay: "⛔ **TRUY CẬP BỊ TỪ CHỐI (Zero-Trust Policy)**: Tài khoản của bạn mang vai trò **[Tên Vai Trò]**, không được phép thực hiện thao tác này. Vui lòng liên hệ Quản trị viên (Admin) nếu cần nâng quyền!"
-
-LUẬT THỰC THI (KHI ĐỦ QUYỀN):
-1. TRA CỨU & BÁO CÁO DOANH SỐ (Chỉ dành cho `sales_manager`):
-   - Khi user hỏi "xem báo cáo doanh số", "doanh số tổng quan": GỌI NGAY tool `search_records` (model='sale.order', fields=['name','amount_total','state','date_order'], limit=50) hoặc `aggregate_records`.
-   - Trình bày bảng Markdown sạch sẽ, có tổng cộng rõ ràng.
-2. TẠO ĐƠN < 20 triệu (Dành cho `sales_staff`, `sales_manager`): Dùng tool `create_sale_order` để tạo đơn ngay.
-3. TẠO ĐƠN >= 20 triệu (QUY TRÌNH DUYỆT):
-   - ĐỪNG tạo đơn trên Odoo ngay! Báo cho user biết đơn cần Manager duyệt.
-   - Trả về ĐÚNG chuỗi text này ở cuối câu trả lời: `[NEED_APPROVAL] {"order_name": "Đơn Hàng Lớn", "total": <tổng_tiền_chính_xác>}`
-4. KHI MANAGER ĐÃ DUYỆT: User sẽ nhắn "[MANAGER_APPROVED] Tạo đơn đi". Lúc này DÙNG TOOL để tạo đơn thật trên Odoo.
-"""
 
 class ClaudeAdapter:
     def __init__(self):
@@ -40,8 +18,12 @@ class ClaudeAdapter:
 
     async def handle_message(self, user_id: str, text: str, user_info: dict, mcp_session) -> str:
         role = user_info.get("official_role", "viewer")
+        u_info = user_info.get("user_info", {})
         
-        # Nếu nhận lệnh duyệt từ Webhook (thông qua user message giả)
+        # Sinh Dynamic System Prompt chuẩn Enterprise từ Odoo User Context
+        system_prompt = build_system_prompt(u_info, role)
+
+        # Nếu nhận lệnh duyệt từ Webhook
         if text.startswith("[MANAGER_APPROVED]"):
             text = text + "\nManager đã duyệt. Hãy tiến hành tạo Sale Order trên Odoo."
 
@@ -69,7 +51,7 @@ class ClaudeAdapter:
                 response = client.messages.create(
                     model=model_name,
                     max_tokens=1500,
-                    system=SYSTEM_PROMPT + f"\nQuyền của User: {role}",
+                    system=system_prompt,
                     messages=messages,
                     tools=tools if tools else anthropic.NOT_GIVEN
                 )
@@ -127,7 +109,7 @@ class ClaudeAdapter:
                         success = self.notification_service.send_approval_request(
                             data.get("order_name", "Order"),
                             data.get("total", 0),
-                            user_info.get("user_info", {}).get("full_name", user_id),
+                            u_info.get("full_name", user_id),
                             manager_chat_id
                         )
                         if success:
