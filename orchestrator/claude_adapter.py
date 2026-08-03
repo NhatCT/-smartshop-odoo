@@ -27,22 +27,47 @@ class ClaudeAdapter:
         if text.startswith("[MANAGER_APPROVED]"):
             text = text + "\nManager đã duyệt. Hãy tiến hành tạo Sale Order trên Odoo."
 
+        # Chỉ truyền các tool nghiệp vụ — loại bỏ tool debug/developer để Haiku không bị nhiễu
+        BUSINESS_TOOLS = {
+            "search_records",
+            "aggregate_records",
+            "create_record",
+            "update_record",
+            "create_sale_order",
+            "get_sale_order",
+            "list_products",
+            "get_stock_quant",
+        }
+
         tools = []
         if mcp_session:
             try:
                 mcp_tools = await mcp_session.list_tools()
                 for t in mcp_tools.tools:
-                    tools.append({
-                        "name": t.name,
-                        "description": t.description,
-                        "input_schema": getattr(t, "input_schema", getattr(t, "inputSchema", {}))
-                    })
+                    if t.name in BUSINESS_TOOLS:
+                        tools.append({
+                            "name": t.name,
+                            "description": t.description,
+                            "input_schema": getattr(t, "input_schema", getattr(t, "inputSchema", {}))
+                        })
+                print(f"[ClaudeAdapter] Tools available: {[t['name'] for t in tools]}")
             except Exception as e:
                 print(f"⚠️ [ClaudeAdapter] Error listing MCP tools: {e}")
 
         client = get_client()
         model_name = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
-        messages = [{"role": "user", "content": text}]
+        # Thêm planning-hint để Haiku lên kế hoạch trước khi gọi Tool
+        PLANNING_HINT = (
+            "[SYSTEM HINT] Trước khi gọi Tool, hãy phân tích yêu cầu và xác định:\n"
+            "1. Cần truy vấn model Odoo nào? Theo thứ tự nào?\n"
+            "2. Có thể kết hợp dữ liệu từ các tool trong cùng 1 lượt không?\n"
+            "Sau đó thực thi ngay và trình bày kết quả cuối cùng bằng tiếng Việt."
+        )
+        messages = [
+            {"role": "user", "content": PLANNING_HINT},
+            {"role": "assistant", "content": "Đã hiểu. Tôi sẽ lên kế hoạch trước khi thực thi."},
+            {"role": "user", "content": text},
+        ]
         final_text = ""
 
         try:
