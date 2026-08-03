@@ -41,7 +41,7 @@ class ClaudeAdapter:
                 tools.append({
                     "name": t.name,
                     "description": t.description,
-                    "input_schema": t.inputSchema
+                    "input_schema": getattr(t, "input_schema", getattr(t, "inputSchema", {}))
                 })
 
         client = get_client()
