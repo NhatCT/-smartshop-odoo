@@ -11,15 +11,17 @@ def get_client():
     return _anthropic_client
 
 SYSTEM_PROMPT = """Bạn là Bộ não AI duy nhất của SmartShop Odoo 19.
-Nhiệm vụ: Tư vấn sản phẩm, kiểm kho, và tạo báo giá (Sale Order).
+Nhiệm vụ: Tư vấn sản phẩm, kiểm kho, xem báo cáo doanh số, và tạo báo giá (Sale Order).
 
 LUẬT BẮT BUỘC:
-1. TRA CỨU: Dùng tool `search_records` để tìm sản phẩm/khách hàng. Luôn hiển thị dữ liệu thật từ Odoo.
+1. TRA CỨU & BÁO CÁO:
+   - Dùng tool `search_records` hoặc `aggregate_records` để tìm sản phẩm, báo cáo doanh số (model `sale.order`), khách hàng.
+   - Luôn hiển thị dữ liệu thật lấy từ Odoo dưới dạng bảng Markdown sạch sẽ, có tổng cộng rõ ràng.
 2. TẠO ĐƠN < 20 triệu: Dùng tool `create_sale_order` để tạo đơn ngay.
 3. TẠO ĐƠN >= 20 triệu (QUY TRÌNH DUYỆT):
    - ĐỪNG tạo đơn trên Odoo ngay!
    - Hãy báo cho user biết đơn cần Manager duyệt.
-   - Hãy trả về ĐÚNG chuỗi text này ở cuối câu trả lời: `[NEED_APPROVAL] {"order_name": "Đơn Hàng Lớn", "total": <tổng_tiền_chính_xác>}`
+   - Trả về ĐÚNG chuỗi text này ở cuối câu trả lời: `[NEED_APPROVAL] {"order_name": "Đơn Hàng Lớn", "total": <tổng_tiền_chính_xác>}`
 4. KHI MANAGER ĐÃ DUYỆT: User sẽ nhắn "[MANAGER_APPROVED] Tạo đơn đi". Lúc này bạn DÙNG TOOL để tạo đơn thật trên Odoo.
 """
 
@@ -36,40 +38,73 @@ class ClaudeAdapter:
 
         tools = []
         if mcp_session:
-            mcp_tools = await mcp_session.list_tools()
-            for t in mcp_tools.tools:
-                tools.append({
-                    "name": t.name,
-                    "description": t.description,
-                    "input_schema": getattr(t, "input_schema", getattr(t, "inputSchema", {}))
-                })
+            try:
+                mcp_tools = await mcp_session.list_tools()
+                for t in mcp_tools.tools:
+                    tools.append({
+                        "name": t.name,
+                        "description": t.description,
+                        "input_schema": getattr(t, "input_schema", getattr(t, "inputSchema", {}))
+                    })
+            except Exception as e:
+                print(f"⚠️ [ClaudeAdapter] Error listing MCP tools: {e}")
 
         client = get_client()
+        model_name = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
+        messages = [{"role": "user", "content": text}]
+        final_text = ""
+
         try:
-            model_name = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
-            response = client.messages.create(
-                model=model_name,
-                max_tokens=1000,
-                system=SYSTEM_PROMPT + f"\nQuyền của User: {role}",
-                messages=[{"role": "user", "content": text}],
-                tools=tools
-            )
+            max_turns = 4
+            for _ in range(max_turns):
+                response = client.messages.create(
+                    model=model_name,
+                    max_tokens=1500,
+                    system=SYSTEM_PROMPT + f"\nQuyền của User: {role}",
+                    messages=messages,
+                    tools=tools if tools else anthropic.NOT_GIVEN
+                )
 
-            final_text = ""
-            for block in response.content:
-                if block.type == "text":
-                    final_text += block.text
-                elif block.type == "tool_use":
-                    # Tự động gọi tool (chạy MCP)
-                    tool_name = block.name
-                    tool_args = block.input
+                messages.append({"role": "assistant", "content": response.content})
+
+                # Check if Claude requested tool calls
+                tool_uses = [b for b in response.content if b.type == "tool_use"]
+                if not tool_uses:
+                    # Final text response from Claude
+                    for b in response.content:
+                        if b.type == "text":
+                            final_text += b.text
+                    break
+
+                # Execute MCP tool calls and feed results back to Claude
+                if not mcp_session:
+                    final_text = "⚠️ Không thể kết nối MCP session để thực thi lệnh."
+                    break
+
+                tool_results = []
+                for tu in tool_uses:
+                    tool_name = tu.name
+                    tool_args = tu.input
+                    tool_id = tu.id
                     try:
-                        result = await mcp_session.call_tool(tool_name, arguments=tool_args)
-                        final_text += f"\n✅ Đã gọi: {tool_name} thành công!"
+                        res = await mcp_session.call_tool(tool_name, arguments=tool_args)
+                        res_str = str(res)
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "content": res_str[:4000]
+                        })
                     except Exception as e:
-                        final_text += f"\n❌ Lỗi gọi tool {tool_name}: {e}"
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "content": f"Lỗi gọi tool {tool_name}: {e}",
+                            "is_error": True
+                        })
 
-            # Xử lý Trigger Approval
+                messages.append({"role": "user", "content": tool_results})
+
+            # Xử lý Trigger Approval nếu có
             if "[NEED_APPROVAL]" in final_text:
                 try:
                     import re
