@@ -14,7 +14,7 @@ from typing import Any
 import os
 
 from .base_agent import BaseAgent, AgentResult
-from auth_gateway import SecurityGateway, generate_approval_token
+from gateway.auth import SecurityGateway, generate_approval_token
 
 # Ngưỡng HITL
 HIGH_VALUE_THRESHOLD_VND = 20_000_000

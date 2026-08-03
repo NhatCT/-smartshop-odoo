@@ -8,7 +8,7 @@ import sys
 import time
 import json
 import asyncio
-from dotenv_loader import load_env
+from shared.utils import load_env
 
 sys.stdout.reconfigure(encoding='utf-8')
 load_env()
@@ -16,7 +16,7 @@ load_env()
 import anthropic
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from auth_gateway import SecurityGateway
+from gateway.auth import SecurityGateway
 import telegram_bot_listener
 
 anthropic_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))

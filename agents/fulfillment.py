@@ -11,7 +11,7 @@ import anthropic
 import os
 
 from .base_agent import BaseAgent, AgentResult
-from odoo_client import OdooClient
+from data_layer.connectors.odoo_rpc import OdooClient
 
 _anthropic_client = None
 

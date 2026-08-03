@@ -15,7 +15,7 @@ import anthropic
 import os
 
 from .base_agent import BaseAgent, AgentResult
-from observability.langfuse_setup import mask_sensitive_text, get_observe_context
+from observability.tracing.langfuse import mask_sensitive_text, get_observe_context
 
 _anthropic_client = None
 

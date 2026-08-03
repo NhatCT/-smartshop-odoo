@@ -197,7 +197,7 @@ if __name__ == "__main__":
         sys.stdout.reconfigure(encoding='utf-8')
     except Exception:
         pass
-    from dotenv_loader import load_env
+    from shared.utils import load_env
     load_env()
     client = OdooClient()
     odoo = client.connect()

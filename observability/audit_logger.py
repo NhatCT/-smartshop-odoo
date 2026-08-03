@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import time
 from typing import Any
-from odoo_client import OdooClient
+from data_layer.connectors.odoo_rpc import OdooClient
 
 
 class AuditEvent:

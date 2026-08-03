@@ -8,7 +8,7 @@ import sys
 import time
 import json
 import asyncio
-from dotenv_loader import load_env
+from shared.utils import load_env
 
 sys.stdout.reconfigure(encoding='utf-8')
 load_env()

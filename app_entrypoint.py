@@ -21,7 +21,7 @@ import os
 import sys
 import threading
 import asyncio
-from dotenv_loader import load_env
+from shared.utils import load_env
 
 try:
     sys.stdout.reconfigure(encoding='utf-8')
@@ -34,7 +34,7 @@ load_env()
 # BƯỚC 2: Setup Langfuse + AnthropicInstrumentor TRƯỚC KHI import anthropic
 # (Per Langfuse Skill: "Import Langfuse AFTER loading environment variables,
 #  Import Langfuse and call its setup BEFORE importing OpenAI/Anthropic client")
-from observability.langfuse_setup import setup_langfuse_tracing, flush_traces, mask_sensitive_text, get_observe_context
+from observability.tracing.langfuse import setup_langfuse_tracing, flush_traces, mask_sensitive_text, get_observe_context
 _langfuse_active = setup_langfuse_tracing()
 
 # BƯỚC 3: Sau đó mới import các module còn lại
@@ -90,7 +90,7 @@ def health_check():
 @app.get("/metrics")
 def get_metrics():
     """Metrics endpoint cho monitoring — Langfuse + MCP cache stats."""
-    from observability.langfuse_setup import get_langfuse
+    from observability.tracing.langfuse import get_langfuse
     lf = get_langfuse()
     return {
         "langfuse_active": _langfuse_active,
@@ -186,7 +186,7 @@ async def _traced_handle_message(channel_msg, obs_ctx) -> str:
     langfuse = get_client()
     if langfuse:
         try:
-            from observability.langfuse_setup import mask_sensitive_text
+            from observability.tracing.langfuse import mask_sensitive_text
             langfuse.update_current_span(
                 input=mask_sensitive_text(text[:500])
             )
@@ -256,7 +256,7 @@ def _update_trace_output(response: str) -> None:
 
 async def _handle_approval_callback(callback_data: str, approver_id: str) -> str:
     """Xử lý nút bấm Approve/Reject từ Telegram Inline Keyboard."""
-    from auth_gateway import verify_approval_token
+    from gateway.auth import verify_approval_token
     parts = callback_data.split("_")
     if len(parts) < 3:
         return "❌ Callback không hợp lệ."

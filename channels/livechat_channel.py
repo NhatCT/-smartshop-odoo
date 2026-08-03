@@ -15,7 +15,7 @@ import time
 from typing import Callable, Awaitable
 
 from .base_channel import BaseChannel, ChannelMessage
-from odoo_client import OdooClient
+from data_layer.connectors.odoo_rpc import OdooClient
 from gateway import SecurityGateway
 
 # Polling interval (giây) — đọc tin nhắn mới mỗi 5 giây
