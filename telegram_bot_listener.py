@@ -291,7 +291,9 @@ async def run_persistent_bot():
                                 print(f"   ❌ [UPDATE ERROR]: {ex}")
                 except Exception as e:
                     print(f"   ⚠️ [POLL ERROR]: {e}")
-                    await asyncio.sleep(2)
+def main():
+    """Entry point for background thread execution"""
+    asyncio.run(run_persistent_bot())
 
 if __name__ == "__main__":
-    asyncio.run(run_persistent_bot())
+    main()
