@@ -56,8 +56,12 @@ PREDEFINED_EMAIL_NAMES = {
 # ------------------------------------------------------------------
 # File lưu liên kết cứng: Telegram ID <-> Odoo Email
 # ------------------------------------------------------------------
+# ------------------------------------------------------------------
 import hmac
 import hashlib
+
+PENDING_OTP_STORE = {}
+
 
 SECRET_SALT = os.getenv("GATEWAY_SECRET_SALT", "SmartShopOdoo19AntiHijackSecretSalt2026")
 

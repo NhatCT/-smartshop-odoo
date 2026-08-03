@@ -59,7 +59,7 @@ class LiveChatChannel(BaseChannel):
         try:
             await asyncio.to_thread(
                 lambda: self._odoo.execute_method(
-                    "mail.channel", "message_post",
+                    "discuss.channel", "message_post",
                     [channel_id],
                     **{
                         "body": text.replace("\n", "<br/>"),
@@ -95,7 +95,7 @@ class LiveChatChannel(BaseChannel):
         # Tìm live chat channels đang active
         channels = await asyncio.to_thread(
             lambda: self._odoo.search_read(
-                "mail.channel",
+                "discuss.channel",
                 domain=[
                     ["channel_type", "=", "livechat"],
                     ["is_member", "=", True]
@@ -115,7 +115,7 @@ class LiveChatChannel(BaseChannel):
                     "mail.message",
                     domain=[
                         ["res_id", "=", cid],
-                        ["model", "=", "mail.channel"],
+                        ["model", "=", "discuss.channel"],
                         ["id", ">", wm],
                         ["message_type", "=", "comment"],
                         ["author_id.name", "not ilike", BOT_AUTHOR_PREFIX]

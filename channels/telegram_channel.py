@@ -86,9 +86,6 @@ class TelegramChannel(BaseChannel):
         self._running = True
         print(f"✅ [{self.name.upper()} CHANNEL] Polling started.")
 
-        # Gửi welcome message cho admin khi khởi động
-        await self._send_startup_message()
-
         while self._running:
             try:
                 updates = await self._poll_updates()

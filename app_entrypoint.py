@@ -205,7 +205,6 @@ async def _traced_handle_message(channel_msg, obs_ctx) -> str:
     # Bước 1: Recommendation Agent — span type "agent" (multi-agent subagent rule)
     if _langfuse_active:
         try:
-            from langfuse import get_client
             lf_client = get_client()
             if lf_client:
                 lf_client.update_current_span(name="recommend-products")
@@ -248,7 +247,6 @@ def _update_trace_output(response: str) -> None:
     if not _langfuse_active:
         return
     try:
-        from langfuse import get_client
         lf_client = get_client()
         if lf_client:
             lf_client.update_current_span(output=response[:500])
