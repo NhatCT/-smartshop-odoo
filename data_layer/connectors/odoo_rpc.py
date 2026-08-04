@@ -19,7 +19,7 @@ class OdooClient:
     def connect(self):
         if self._odoo:
             return self._odoo
-        port = None if self._protocol == "jsonrpc+ssl" else 8069
+        port = 443 if self._protocol == "jsonrpc+ssl" else 8069
         self._odoo = odoorpc.ODOO(
             self._host,
             protocol=self._protocol,

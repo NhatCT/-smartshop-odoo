@@ -18,11 +18,12 @@ class OTPService:
         try:
             records = client.search_read(
                 model="res.users",
-                domain=[["login", "=", email], ["active", "in", [True, False]]],
+                domain=["|", ["login", "=ilike", email], ["email", "=ilike", email]],
                 fields=["id", "name", "login", "active"],
                 limit=1
             )
-        except Exception:
+        except Exception as e:
+            print(f"[OTPService] Error searching res.users: {e}")
             records = []
 
         if not records:
@@ -43,7 +44,7 @@ class OTPService:
 
         sent = self.notification_service.send_otp_via_n8n(email, otp_code, employee_name)
         if sent:
-            print(f"\n✅ [OTP EMAIL SENT via n8n]: Telegram ID [{telegram_id}] | Email: {email}")
+            print(f"[OTP EMAIL SENT via n8n]: Telegram ID [{telegram_id}] | Email: {email}")
             return True, (
                 f"✉️ **Mã xác thực OTP đã được gửi tới Email:** `{email}`\n\n"
                 f"Vui lòng kiểm tra hộp thư của bạn và nhập lệnh xác thực:\n"

@@ -87,15 +87,16 @@ class OdooRoleContextService:
 
     def _do_fetch_user_context(self, email: str) -> OdooUserContext | None:
         """Kéo thông tin người dùng và danh sách nhóm res.groups trực tiếp từ Odoo RPC."""
+        clean_email = email.lower().strip()
         try:
             records = self.odoo_client.search_read(
                 model="res.users",
-                domain=[["login", "=", email.lower().strip()], ["active", "in", [True, False]]],
+                domain=["|", ["login", "=ilike", clean_email], ["email", "=ilike", clean_email]],
                 fields=["id", "name", "login", "active", "company_id", "all_group_ids"],
                 limit=1
             )
         except Exception as e:
-            print(f"⚠️ [OdooRoleContextService] Lỗi query res.users: {e}")
+            print(f"[OdooRoleContextService] Error querying res.users: {e}")
             return None
 
         if not records:
