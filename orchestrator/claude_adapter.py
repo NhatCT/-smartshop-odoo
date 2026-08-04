@@ -4,6 +4,7 @@ import json
 import anthropic
 from gateway.services.notification_service import NotificationService
 from orchestrator.prompts import build_system_prompt
+from orchestrator.memory_service import ConversationMemoryService
 
 _anthropic_client = None
 def get_client():
@@ -16,8 +17,14 @@ def get_client():
 class ClaudeAdapter:
     def __init__(self):
         self.notification_service = NotificationService()
+        self.memory_service = ConversationMemoryService(max_messages=10, ttl_seconds=3600)
 
     async def handle_message(self, user_id: str, text: str, user_info: dict, mcp_session) -> str:
+        # Xử lý lệnh xóa bộ nhớ hội thoại
+        if text.strip().lower() in ("/clear", "/reset"):
+            self.memory_service.clear_history(user_id)
+            return "🧹 **Đã xóa bộ nhớ hội thoại!** Bạn có thể bắt đầu chủ đề mới."
+
         # Hỗ trợ cả dict trực tiếp lẫn nested dict từ Auth Gateway
         u_info = user_info.get("user_info", user_info) if isinstance(user_info, dict) else {}
 
@@ -59,18 +66,10 @@ class ClaudeAdapter:
 
         client = get_client()
         model_name = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
-        # Thêm planning-hint để Haiku lên kế hoạch trước khi gọi Tool
-        PLANNING_HINT = (
-            "[SYSTEM HINT] Trước khi gọi Tool, hãy phân tích yêu cầu và xác định:\n"
-            "1. Cần truy vấn model Odoo nào? Theo thứ tự nào?\n"
-            "2. Có thể kết hợp dữ liệu từ các tool trong cùng 1 lượt không?\n"
-            "Sau đó thực thi ngay và trình bày kết quả cuối cùng bằng tiếng Việt."
-        )
-        messages = [
-            {"role": "user", "content": PLANNING_HINT},
-            {"role": "assistant", "content": "Đã hiểu. Tôi sẽ lên kế hoạch trước khi thực thi."},
-            {"role": "user", "content": text},
-        ]
+
+        # Nạp lịch sử chat đa lượt của user_id (Multi-turn Context Memory)
+        past_history = self.memory_service.get_history(user_id)
+        messages = list(past_history) + [{"role": "user", "content": text}]
         final_text = ""
 
         try:
@@ -126,8 +125,7 @@ class ClaudeAdapter:
 
                 messages.append({"role": "user", "content": tool_results})
 
-            # Nếu Claude gọi tool liên tục nhưng không trả lời text (hết max_turns)
-            # → Yêu cầu Claude tổng hợp kết quả từ dữ liệu đã thu thập
+            # Nếu Claude gọi tool liên tục nhưng chưa kịp trả lời text (hết max_turns)
             if not final_text and messages:
                 try:
                     messages.append({
@@ -146,6 +144,7 @@ class ClaudeAdapter:
                 except Exception as e:
                     print(f"⚠️ [ClaudeAdapter] Force-summarize failed: {e}")
 
+            # Xử lý Trigger Approval nếu có
             if "[NEED_APPROVAL]" in final_text:
                 try:
                     match = re.search(r'\[NEED_APPROVAL\]\s*(.*)', final_text)
@@ -168,7 +167,13 @@ class ClaudeAdapter:
                 except Exception as e:
                     print(f"Error parsing NEED_APPROVAL: {e}")
 
-            return final_text if final_text else "Tôi đã thực hiện xong."
+            res_output = final_text if final_text else "Tôi đã thực hiện xong."
+
+            # Lưu lượt hội thoại vào bộ nhớ (Multi-turn Context Memory)
+            self.memory_service.add_user_message(user_id, text)
+            self.memory_service.add_assistant_message(user_id, res_output)
+
+            return res_output
 
         except Exception as e:
             return f"❌ Lỗi từ Claude API: {e}"
