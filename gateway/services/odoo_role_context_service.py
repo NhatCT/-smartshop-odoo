@@ -4,7 +4,6 @@ Lớp chuyên trách pull thông tin Người dùng, Nhóm quyền (res.groups) 
 Cung cấp Permission Context Card chuẩn hóa để gửi vào System Prompt và Python Security Gateway.
 """
 
-import time
 from dataclasses import dataclass, field
 from data_layer.connectors.odoo_rpc import OdooClient
 
@@ -53,37 +52,21 @@ class OdooUserContext:
 
 class OdooRoleContextService:
     """
-    Service kéo Role và Quyền hạn live từ Odoo với In-Memory TTL Cache (5 phút).
-    Tiết kiệm ~150ms RPC call cho các tin nhắn liên tiếp của cùng 1 user.
+    Service kéo Role và Quyền hạn LIVE 100% từ Odoo mỗi request (Zero-Trust).
+    KHÔNG cache — đảm bảo mọi thay đổi quyền trên Odoo được phản ánh ngay lập tức.
     """
-    _cache: dict[str, tuple[float, OdooUserContext]] = {}
 
-    def __init__(self, odoo_client: OdooClient | None = None, cache_ttl_seconds: int = 60):
+    def __init__(self, odoo_client: OdooClient | None = None):
         self.odoo_client = odoo_client or OdooClient()
-        self.cache_ttl_seconds = cache_ttl_seconds
 
     @classmethod
     def clear_cache(cls, email: str | None = None):
-        if email:
-            cls._cache.pop(email.lower().strip(), None)
-        else:
-            cls._cache.clear()
+        # Giữ method để tương thích — không còn cache nên không làm gì.
+        pass
 
     def fetch_user_context(self, email: str, force_refresh: bool = False) -> OdooUserContext | None:
-        key = email.lower().strip()
-        now = time.time()
-
-        if not force_refresh and key in self._cache:
-            cached_time, cached_ctx = self._cache[key]
-            if now - cached_time < self.cache_ttl_seconds:
-                return cached_ctx
-
-        ctx = self._do_fetch_user_context(email)
-        if ctx:
-            self._cache[key] = (now, ctx)
-        elif key in self._cache:
-            del self._cache[key]
-        return ctx
+        # Luôn đọc live từ Odoo — không dùng cache.
+        return self._do_fetch_user_context(email)
 
     def _do_fetch_user_context(self, email: str) -> OdooUserContext | None:
         """Kéo thông tin người dùng và danh sách nhóm res.groups trực tiếp từ Odoo RPC."""
@@ -166,6 +149,12 @@ class OdooRoleContextService:
             role_cat = "accountant"
         else:
             role_cat = "viewer"
+
+        # Log xác nhận quyền được đọc LIVE từ Odoo mỗi request
+        print(
+            f"[PERMISSION LIVE] {email} | role={role_cat} | "
+            f"groups={len(odoo_groups)} | tools={len(allowed_tools)} | models={len(allowed_models)}"
+        )
 
         return OdooUserContext(
             user_id=user.get("id"),

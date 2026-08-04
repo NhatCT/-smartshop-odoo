@@ -63,7 +63,7 @@ def log_audit_decision(user_id: str, intent: str, role: str, tools_called: list,
         "tools_called": tools_called,
         "status": status
     }
-    print(f"📋 [ERP AUDIT TRAIL] {json.dumps(audit_entry, ensure_ascii=False)}")
+    print(f"[ERP AUDIT TRAIL] {json.dumps(audit_entry, ensure_ascii=False)}")
 
 
 class ClaudeAdapter:
@@ -211,14 +211,46 @@ class ClaudeAdapter:
                     tools_called_log.append(tool_name)
 
                     target_model = tool_args.get("model")
+                    # Debug: in rõ quyền + model đang gọi để xác nhận ACL
+                    print(
+                        f"[ACL CHECK] tool={tool_name} | target_model={target_model} | "
+                        f"allowed_models={allowed_models_list} | role={role}"
+                    )
                     if target_model and target_model not in allowed_models_list:
+                        print(f"[ACL DENIED] {tool_name} -> {target_model} (role={role})")
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": tool_id,
-                            "content": f"⛔ ACCESS DENIED: Nhóm quyền Odoo của bạn ({role.upper()}) không được phép truy vấn model '{target_model}'.",
+                            "content": f"ACCESS DENIED: Nhóm quyền Odoo của bạn ({role.upper()}) không được phép truy vấn model '{target_model}'.",
                             "is_error": True
                         })
                         continue
+                    print(f"[ACL ALLOWED] {tool_name} -> {target_model}")
+
+                    # ⛔ ENFORCEMENT: Chặn đơn > 20tr ở code (không phụ thuộc Claude).
+                    # Nếu Claude gọi create_sale_order mà tổng đơn > 20tr → chuyển sang approval flow.
+                    if tool_name == "create_sale_order":
+                        draft = self.draft_service.get_draft(user_id)
+                        if draft.total_amount > 20_000_000:
+                            print(f"[APPROVAL GATE] Block create_sale_order: total={draft.total_amount:,.0f} > 20tr")
+                            order_name = f"SO-{user_id}-{int(time.time())}"
+                            self.fulfillment_service.register_order_reference(user_id, order_name)
+                            manager_chat_id = os.getenv("ADMIN_CHAT_ID", "123456789")
+                            self.notification_service.send_approval_request(
+                                order_name,
+                                draft.total_amount,
+                                u_info.get("full_name", user_id),
+                                manager_chat_id
+                            )
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": tool_id,
+                                "content": (
+                                    f"⏳ Đơn hàng {draft.total_amount:,.0f} VNĐ (> 20 triệu) đã được chuyển đến n8n "
+                                    f"để xin phép Manager. Vui lòng chờ phê duyệt. (order_name={order_name})"
+                                ),
+                            })
+                            continue
 
                     try:
                         res = await mcp_session.call_tool(tool_name, arguments=tool_args)
