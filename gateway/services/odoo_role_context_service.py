@@ -58,7 +58,7 @@ class OdooRoleContextService:
     """
     _cache: dict[str, tuple[float, OdooUserContext]] = {}
 
-    def __init__(self, odoo_client: OdooClient | None = None, cache_ttl_seconds: int = 300):
+    def __init__(self, odoo_client: OdooClient | None = None, cache_ttl_seconds: int = 60):
         self.odoo_client = odoo_client or OdooClient()
         self.cache_ttl_seconds = cache_ttl_seconds
 
@@ -69,11 +69,11 @@ class OdooRoleContextService:
         else:
             cls._cache.clear()
 
-    def fetch_user_context(self, email: str) -> OdooUserContext | None:
+    def fetch_user_context(self, email: str, force_refresh: bool = False) -> OdooUserContext | None:
         key = email.lower().strip()
         now = time.time()
 
-        if key in self._cache:
+        if not force_refresh and key in self._cache:
             cached_time, cached_ctx = self._cache[key]
             if now - cached_time < self.cache_ttl_seconds:
                 return cached_ctx
@@ -81,6 +81,8 @@ class OdooRoleContextService:
         ctx = self._do_fetch_user_context(email)
         if ctx:
             self._cache[key] = (now, ctx)
+        elif key in self._cache:
+            del self._cache[key]
         return ctx
 
     def _do_fetch_user_context(self, email: str) -> OdooUserContext | None:
