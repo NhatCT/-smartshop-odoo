@@ -27,8 +27,11 @@ class IntentRouter:
             if not any(kw in text_lower for kw in ["tạo đơn", "lên đơn", "đặt hàng"]):
                 return "ORDER_LOOKUP"
 
-        # 3. Tạo đơn / Báo giá
-        if any(kw in text_lower for kw in ["tạo đơn", "lên đơn", "báo giá", "bán hàng", "chốt đơn", "đặt hàng"]):
+        # 3. Tạo đơn / Báo giá (bao gồm chiết khấu/giảm giá — thường xuất hiện trong luồng tạo đơn)
+        if any(kw in text_lower for kw in [
+            "tạo đơn", "lên đơn", "báo giá", "bán hàng", "chốt đơn", "đặt hàng",
+            "chiết khấu", "giảm giá", "discount", "khuyến mãi"
+        ]):
             return "SALE_ORDER_CREATE"
 
         # 4. Tra cứu tồn kho

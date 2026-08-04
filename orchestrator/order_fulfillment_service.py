@@ -48,6 +48,7 @@ class OrderFulfillmentService:
                 "name": item.name,
                 "product_uom_qty": item.qty,
                 "price_unit": item.unit_price or 0.0,
+                "discount": item.discount or 0.0,
             })
             for item in draft.items
         ]

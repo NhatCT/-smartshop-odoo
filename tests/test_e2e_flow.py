@@ -223,6 +223,34 @@ class E2EFlowTest(unittest.TestCase):
         # Đảm bảo order reference đã đăng ký để callback duyệt
         self.assertIn("emp3", adapter.fulfillment_service._order_refs.values())
 
+    def test_9_discount_flow(self):
+        """Luồng chiết khấu: áp dụng % giảm giá → tổng tiền giảm → tạo đơn có discount."""
+        from orchestrator.draft_order_service import OrderDraftStateService
+        from orchestrator.order_fulfillment_service import OrderFulfillmentService
+
+        draft_svc = OrderDraftStateService()
+        fulfillment = OrderFulfillmentService(draft_service=draft_svc)
+        fulfillment.odoo_client.create = MagicMock(return_value=1000)
+
+        # Nhân viên tạo đơn 5 Samsung S24 Ultra giá 28tr/chiếc = 140tr
+        draft_svc.set_customer("emp4", 5, "Alice")
+        draft_svc.add_item("emp4", 20, "Samsung Galaxy S24 Ultra", qty=5, unit_price=28_000_000)
+        self.assertEqual(draft_svc.get_draft("emp4").total_amount, 140_000_000)
+
+        # Áp dụng chiết khấu 28.57% để tổng = 100tr
+        draft_svc.set_discount("emp4", 20, 28.57)
+        draft = draft_svc.get_draft("emp4")
+        self.assertAlmostEqual(draft.total_amount, 100_000_000, delta=5000)
+
+        # Manager duyệt → tạo sale.order có discount
+        fulfillment.register_order_reference("emp4", "SO100")
+        ok, msg = fulfillment.approve_order("SO100")
+        self.assertTrue(ok)
+        # Kiểm tra discount được truyền vào order line
+        call_args = fulfillment.odoo_client.create.call_args
+        order_lines = call_args[0][1]["order_line"]
+        self.assertEqual(order_lines[0][2]["discount"], 28.57)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

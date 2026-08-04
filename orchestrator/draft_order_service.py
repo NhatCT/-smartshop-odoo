@@ -13,10 +13,12 @@ class DraftOrderItem:
     name: str
     qty: float = 1.0
     unit_price: float = 0.0
+    discount: float = 0.0  # % chiết khấu (0-100)
 
     @property
     def subtotal(self) -> float:
-        return self.qty * self.unit_price
+        """Thành tiền sau chiết khấu."""
+        return self.qty * self.unit_price * (1 - self.discount / 100)
 
 
 @dataclass
@@ -108,6 +110,15 @@ class OrderDraftStateService:
             ))
 
         draft.last_updated = time.time()
+        return draft
+
+    def set_discount(self, user_id: str, product_id: int, discount_pct: float) -> DraftOrder:
+        """Áp dụng chiết khấu (%) cho một sản phẩm trong đơn nháp."""
+        draft = self.get_draft(user_id)
+        item = next((i for i in draft.items if i.product_id == product_id), None)
+        if item:
+            item.discount = max(0.0, min(100.0, float(discount_pct)))
+            draft.last_updated = time.time()
         return draft
 
     def clear_draft(self, user_id: str):
