@@ -159,12 +159,20 @@ class ClaudeAdapter:
         MAX_SEARCH_TURNS = 2
         tools_called_log = []
 
+        system_blocks = [
+            {
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"}
+            }
+        ]
+
         try:
             for turn in range(MAX_SEARCH_TURNS):
                 response = client.messages.create(
                     model=model_name,
                     max_tokens=1500,
-                    system=system_prompt,
+                    system=system_blocks,
                     messages=messages,
                     tools=tools if tools else anthropic.NOT_GIVEN
                 )
@@ -237,7 +245,7 @@ class ClaudeAdapter:
                     summary_resp = client.messages.create(
                         model=model_name,
                         max_tokens=2048,
-                        system=system_prompt,
+                        system=system_blocks,
                         messages=messages,
                     )
                     for b in summary_resp.content:
