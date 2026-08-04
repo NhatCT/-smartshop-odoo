@@ -39,19 +39,21 @@ def verify_approval_token(order_name: str, approver_id: str, token: str) -> bool
     expected = hmac.new(_APPROVAL_SECRET.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()[:24]
     return hmac.compare_digest(signature, expected)
 
+
 class SecurityGateway:
-    def __init__(self):
+    def __init__(self) -> None:
         self.permission_service = PermissionService()
         self.otp_service = OTPService()
-    
-    def process_incoming_request(self, telegram_id: int):
+
+    def process_incoming_request(self, telegram_id: int | str) -> dict:
         return self.permission_service.process_incoming_request(telegram_id)
-        
-    def request_otp(self, telegram_id, email):
+
+    def request_otp(self, telegram_id: int | str, email: str) -> tuple[bool, str]:
         return self.otp_service.request_otp(telegram_id, email)
-        
-    def verify_otp_and_bind(self, telegram_id, user_otp):
+
+    def verify_otp_and_bind(self, telegram_id: int | str, user_otp: str) -> tuple[bool, str]:
         return self.otp_service.verify_otp_and_bind(telegram_id, user_otp)
+
 
 __all__ = [
     "SecurityGateway",
