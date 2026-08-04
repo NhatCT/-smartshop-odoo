@@ -91,27 +91,36 @@ class OdooRoleContextService:
                 print(f"⚠️ [OdooRoleContextService] Lỗi read res.groups: {e}")
 
         # Phán xét vai trò & Tool Whitelist tự động từ nhóm Odoo
-        is_admin = any("Quản trị viên" in g or "Administrator" in g or "Access Rights" in g for g in odoo_groups)
-        is_sales_mgr = is_admin or any("Bán hàng / Quản trị viên" in g or "Sales / Administrator" in g for g in odoo_groups)
+        is_sys_admin = any(
+            "Quản trị / Thiết lập" in g or "Administration / Settings" in g or 
+            "Quản trị viên hệ thống" in g or "Access Rights" in g
+            for g in odoo_groups
+        )
+        is_sales_mgr = is_sys_admin or any("Bán hàng / Quản trị viên" in g or "Sales / Administrator" in g for g in odoo_groups)
         is_sales_staff = is_sales_mgr or any("Bán hàng" in g or "Sales" in g for g in odoo_groups)
-        is_inventory_staff = is_admin or any("Tồn kho" in g or "Inventory" in g for g in odoo_groups)
-        is_accountant = is_admin or any("Kế toán" in g or "Accounting" in g or "Invoicing" in g for g in odoo_groups)
+        is_inventory_mgr = is_sys_admin or any("Tồn kho / Quản trị viên" in g or "Inventory / Administrator" in g for g in odoo_groups)
+        is_inventory_staff = is_inventory_mgr or any("Tồn kho" in g or "Inventory" in g for g in odoo_groups)
+        is_accountant_mgr = is_sys_admin or any("Kế toán / Quản trị viên" in g or "Accounting / Administrator" in g for g in odoo_groups)
+        is_accountant = is_accountant_mgr or any("Kế toán" in g or "Accounting" in g or "Invoicing" in g for g in odoo_groups)
 
         allowed = set(["search_records", "list_products"])
-        if is_sales_staff or is_sales_mgr or is_admin:
+        if is_sales_staff or is_sales_mgr or is_sys_admin:
             allowed.update(["create_sale_order", "create_record", "update_record", "get_sale_order"])
-        if is_inventory_staff or is_admin:
+        if is_inventory_staff or is_sys_admin:
             allowed.update(["get_stock_quant", "search_records"])
-        if is_accountant or is_sales_mgr or is_admin:
+        if is_accountant or is_sales_mgr or is_sys_admin:
             allowed.update(["aggregate_records"])
 
-        role_cat = "sales_manager" if (is_admin or is_sales_mgr) else (
-            "sales_staff" if is_sales_staff else (
-                "inventory_staff" if is_inventory_staff else (
-                    "accountant" if is_accountant else "viewer"
-                )
-            )
-        )
+        if is_sys_admin or is_sales_mgr:
+            role_cat = "sales_manager"
+        elif is_sales_staff:
+            role_cat = "sales_staff"
+        elif is_inventory_mgr or is_inventory_staff:
+            role_cat = "inventory_staff"
+        elif is_accountant:
+            role_cat = "accountant"
+        else:
+            role_cat = "viewer"
 
         return OdooUserContext(
             user_id=user.get("id"),
