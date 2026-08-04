@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import time
 import anthropic
 from gateway.services.notification_service import NotificationService
 from orchestrator.prompts import build_system_prompt
@@ -19,15 +20,57 @@ def get_client():
     return _anthropic_client
 
 
+def clean_tool_result(res_obj, max_items: int = 5) -> str:
+    """
+    KỸ THUẬT 2 (Context Window Management):
+    Lọc bỏ các trường metadata nặng của Odoo (create_uid, write_uid, __last_update)
+    và cắt bớt danh sách tối đa 5 bản ghi để tránh tràn Context Window của Haiku.
+    """
+    try:
+        raw_str = ""
+        if hasattr(res_obj, "content") and res_obj.content and hasattr(res_obj.content[0], "text"):
+            raw_str = res_obj.content[0].text
+        else:
+            raw_str = str(res_obj)
+
+        data = json.loads(raw_str)
+        if isinstance(data, dict) and "result" in data and isinstance(data["result"], list):
+            items = data["result"][:max_items]
+            cleaned_items = []
+            skip_fields = {"create_uid", "write_uid", "create_date", "write_date", "__last_update", "message_follower_ids", "message_ids"}
+            for item in items:
+                if isinstance(item, dict):
+                    cleaned_items.append({k: v for k, v in item.items() if k not in skip_fields})
+                else:
+                    cleaned_items.append(item)
+            data["result"] = cleaned_items
+            data["total_count_truncated"] = len(items)
+            return json.dumps(data, ensure_ascii=False)
+        return raw_str[:3000]
+    except Exception:
+        return str(res_obj)[:3000]
+
+
+def log_audit_decision(user_id: str, intent: str, role: str, tools_called: list, status: str):
+    """
+    KỸ THUẬT 4 (ERP Decision Audit Trail Log):
+    Ghi vết nhật ký quyết định cho tuân thủ ERP (Compliance Audit Trail).
+    """
+    audit_entry = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "user_id": user_id,
+        "role": role,
+        "intent": intent,
+        "tools_called": tools_called,
+        "status": status
+    }
+    print(f"📋 [ERP AUDIT TRAIL] {json.dumps(audit_entry, ensure_ascii=False)}")
+
+
 class ClaudeAdapter:
     """
-    Enterprise Orchestrator Adapter — Anthropic 6-Layer Architecture Standard.
-    Lớp 1: IntentRouter
-    Lớp 2: PermissionGateway (OdooRoleContextService)
-    Lớp 3: SkillLoader
-    Lớp 4: PromptBuilder (Search-first + Format Control)
-    Lớp 5: ModelRouter (Haiku vs Sonnet)
-    Lớp 6: Tool Executor & Cap MAX_TOOL_TURNS = 2 (Budget Safety Guardrail)
+    Enterprise Orchestrator Adapter — Production-Grade Spec.
+    Tích hợp 6 Lớp + 4 Kỹ thuật Nâng cao (Output Prefill, Context Truncation, Graceful Degradation, Audit Trail).
     """
     def __init__(self):
         self.notification_service = NotificationService()
@@ -47,10 +90,10 @@ class ClaudeAdapter:
 
         # Hỗ trợ cả dict trực tiếp lẫn nested dict từ Auth Gateway
         u_info = user_info.get("user_info", user_info) if isinstance(user_info, dict) else {}
+        role = u_info.get("role_category", "viewer")
 
         # LỚP 1: Intent Router
         intent = self.intent_router.route_intent(text)
-        print(f"[ClaudeAdapter] Classified Intent for {user_id}: {intent}")
 
         # LỚP 2 & 3: Permission Filter & Dynamic Skill Loader
         user_allowed_tools = u_info.get("allowed_tools", [])
@@ -99,7 +142,6 @@ class ClaudeAdapter:
                             "description": t.description,
                             "input_schema": getattr(t, "input_schema", getattr(t, "inputSchema", {}))
                         })
-                print(f"[ClaudeAdapter] Loaded Tools for {intent}: {[t['name'] for t in tools]}")
             except Exception as e:
                 print(f"⚠️ [ClaudeAdapter] Error listing MCP tools: {e}")
 
@@ -107,7 +149,6 @@ class ClaudeAdapter:
 
         # LỚP 5: Dynamic Model Router (Haiku vs Sonnet)
         model_name = self.model_router.select_model(intent)
-        print(f"[ClaudeAdapter] Selected Model for {intent}: {model_name}")
 
         # Nạp lịch sử chat đa lượt của user_id (Multi-turn Context Memory)
         past_history = self.memory_service.get_history(user_id)
@@ -116,6 +157,7 @@ class ClaudeAdapter:
 
         # LỚP 6: Tool Execution Guardrail — Cap MAX_SEARCH_TURNS = 2 (Budget Safety & Fast Response)
         MAX_SEARCH_TURNS = 2
+        tools_called_log = []
 
         try:
             for turn in range(MAX_SEARCH_TURNS):
@@ -147,33 +189,37 @@ class ClaudeAdapter:
                     tool_name = tu.name
                     tool_args = tu.input
                     tool_id = tu.id
+                    tools_called_log.append(tool_name)
 
+                    # Model-Level Security Enforcement
                     target_model = tool_args.get("model")
                     if allowed_models and target_model and target_model not in allowed_models:
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": tool_id,
-                            "content": f"⛔ ACCESS DENIED: Nhóm quyền Odoo của bạn ({u_info.get('role_category', 'user').upper()}) không được phép truy vấn model '{target_model}'.",
+                            "content": f"⛔ ACCESS DENIED: Nhóm quyền Odoo của bạn ({role.upper()}) không được phép truy vấn model '{target_model}'.",
                             "is_error": True
                         })
                         continue
 
+                    # KỸ THUẬT 3: Graceful Degradation for Tool/Odoo Failures
                     try:
                         res = await mcp_session.call_tool(tool_name, arguments=tool_args)
-                        if hasattr(res, "content") and res.content and hasattr(res.content[0], "text"):
-                            res_str = res.content[0].text
-                        else:
-                            res_str = str(res)
+                        cleaned_str = clean_tool_result(res, max_items=5)
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": tool_id,
-                            "content": res_str[:4000]
+                            "content": cleaned_str
                         })
                     except Exception as e:
+                        print(f"⚠️ [Odoo RPC Error] {tool_name}: {e}")
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": tool_id,
-                            "content": f"⚠️ Lỗi Odoo RPC [{tool_name}]: {e}",
+                            "content": (
+                                f"⚠️ **Hệ thống Odoo SaaS phản hồi chậm hoặc báo lỗi**: {e}\n"
+                                f"Gợi ý: Vui lòng thử lại hoặc lưu đơn nháp tạm thời."
+                            ),
                             "is_error": True
                         })
 
@@ -223,6 +269,9 @@ class ClaudeAdapter:
 
             res_output = final_text if final_text else "Tôi đã thực hiện xong."
 
+            # KỸ THUẬT 4: Ghi vết ERP Decision Audit Trail
+            log_audit_decision(user_id, intent, role, tools_called_log, "SUCCESS")
+
             # Lưu lượt hội thoại vào bộ nhớ (Multi-turn Context Memory)
             self.memory_service.add_user_message(user_id, text)
             self.memory_service.add_assistant_message(user_id, res_output)
@@ -230,4 +279,5 @@ class ClaudeAdapter:
             return res_output
 
         except Exception as e:
+            log_audit_decision(user_id, intent, role, tools_called_log, f"ERROR: {e}")
             return f"❌ Lỗi từ Claude API: {e}"
