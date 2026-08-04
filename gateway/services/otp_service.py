@@ -84,9 +84,14 @@ class OTPService:
         if str_id in PENDING_OTP_STORE:
             del PENDING_OTP_STORE[str_id]
 
+        from gateway.services.odoo_role_context_service import OdooRoleContextService
+        from orchestrator.memory_service import MemoryService
+        OdooRoleContextService.clear_cache()
+        MemoryService().clear_memory(telegram_id)
+
         from gateway.services.permission_service import PermissionService
         perm_svc = PermissionService()
-        user_info = perm_svc.process_incoming_request(telegram_id)
+        user_info = perm_svc.process_incoming_request(telegram_id, force_refresh=True)
         u_info = user_info.get("user_info", {}) if isinstance(user_info, dict) else {}
         full_name = u_info.get("full_name", email)
         groups = u_info.get("odoo_groups", [])
