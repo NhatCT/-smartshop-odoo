@@ -121,6 +121,25 @@ _claude_adapter = ClaudeAdapter()
 _mcp_wrapper: MCPClientWrapper | None = None
 
 
+@app.on_event("shutdown")
+async def on_shutdown():
+    """Flush Langfuse traces khi server shutdown — tránh mất traces."""
+    flush_traces()
+
+
+# ------------------------------------------------------------------
+# Core Message Handler — @observe decorated cho Langfuse tracing
+# ------------------------------------------------------------------
+
+# Global agents — singleton
+_claude_adapter = ClaudeAdapter()
+
+
+
+# Global MCP wrapper (set sau khi MCP session khởi động)
+_mcp_wrapper: MCPClientWrapper | None = None
+
+
 try:
     from langfuse.decorators import observe
     from langfuse import get_client
@@ -135,14 +154,6 @@ except ImportError:
 async def handle_message(channel_msg) -> str:
     """
     Central message handler với Langfuse @observe tracing.
-
-    Trace structure (theo best practices):
-    - Trace: "smartshop-chat-turn" (1 trace per turn, per channel)
-      - user_id: masked (no PII leak)
-      - session_id: channel+user_id (groups turns per conversation)
-      - tags: ["channel:telegram", "role:sales_staff", "smartshop"]
-      - input: user message text (clean, not full args dump)
-      - output: final assistant response
     """
     user_id = channel_msg.user_id
     text = channel_msg.text
@@ -158,27 +169,27 @@ async def handle_message(channel_msg) -> str:
     if not auth["allowed"]:
         return auth["reason"]
 
-    user_info = auth
-    role = user_info.get("official_role", "viewer")
+    user_info = auth.get("user_info", {})
+    role = user_info.get("role_category", auth.get("official_role", "viewer"))
 
     obs_ctx = get_observe_context(user_id, channel, role)
 
     if _langfuse_active:
         from langfuse import propagate_attributes
         
-        # Propagate attributes (v4 SDK pattern)
         with propagate_attributes(
             user_id=obs_ctx["user_id"],
             session_id=obs_ctx["session_id"],
             tags=obs_ctx["tags"],
             trace_name="smartshop-chat-turn"
         ):
-            return await _traced_handle_message(channel_msg, obs_ctx)
+            return await _traced_handle_message(channel_msg, user_info, obs_ctx)
     else:
-        return await _traced_handle_message(channel_msg, obs_ctx)
+        return await _traced_handle_message(channel_msg, user_info, obs_ctx)
+
 
 @observe()
-async def _traced_handle_message(channel_msg, obs_ctx) -> str:
+async def _traced_handle_message(channel_msg, user_info: dict, obs_ctx: dict) -> str:
     user_id = channel_msg.user_id
     text = channel_msg.text
     
@@ -186,10 +197,11 @@ async def _traced_handle_message(channel_msg, obs_ctx) -> str:
         return "⚠️ MCP session chưa sẵn sàng."
 
     result = await _claude_adapter.handle_message(
-        user_id, text, obs_ctx, _mcp_wrapper
+        user_id, text, user_info, _mcp_wrapper
     )
     _update_trace_output(result)
     return result
+
 
 def _update_trace_output(response: str) -> None:
     """Cập nhật output của trace hiện tại (per best practices: root trace có output)."""

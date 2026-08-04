@@ -18,16 +18,17 @@ class ClaudeAdapter:
         self.notification_service = NotificationService()
 
     async def handle_message(self, user_id: str, text: str, user_info: dict, mcp_session) -> str:
-        u_info = user_info.get("user_info", {})
+        # Hỗ trợ cả dict trực tiếp lẫn nested dict từ Auth Gateway
+        u_info = user_info.get("user_info", user_info) if isinstance(user_info, dict) else {}
 
-        # Sinh System Prompt từ raw Odoo groups — Claude tự suy luận quyền
+        # Sinh System Prompt từ raw Odoo groups + user identity
         system_prompt = build_system_prompt(u_info)
 
         # Nếu nhận lệnh duyệt từ Webhook
         if text.startswith("[MANAGER_APPROVED]"):
             text = text + "\nManager đã duyệt. Hãy tiến hành tạo Sale Order trên Odoo."
 
-        # Chỉ truyền các tool nghiệp vụ — loại bỏ tool debug/developer để Haiku không bị nhiễu
+        # Chỉ truyền các tool nghiệp vụ phù hợp với quyền Odoo thực tế của User (Deterministic RBAC)
         BUSINESS_TOOLS = {
             "search_records",
             "aggregate_records",
@@ -38,19 +39,21 @@ class ClaudeAdapter:
             "list_products",
             "get_stock_quant",
         }
+        user_allowed = set(u_info.get("allowed_tools", []))
+        effective_allowed = BUSINESS_TOOLS.intersection(user_allowed) if user_allowed else BUSINESS_TOOLS
 
         tools = []
         if mcp_session:
             try:
                 mcp_tools = await mcp_session.list_tools()
                 for t in mcp_tools.tools:
-                    if t.name in BUSINESS_TOOLS:
+                    if t.name in effective_allowed:
                         tools.append({
                             "name": t.name,
                             "description": t.description,
                             "input_schema": getattr(t, "input_schema", getattr(t, "inputSchema", {}))
                         })
-                print(f"[ClaudeAdapter] Tools available: {[t['name'] for t in tools]}")
+                print(f"[ClaudeAdapter] Tools available for {u_info.get('full_name', user_id)}: {[t['name'] for t in tools]}")
             except Exception as e:
                 print(f"⚠️ [ClaudeAdapter] Error listing MCP tools: {e}")
 

@@ -1,11 +1,46 @@
 from data_layer.connectors.odoo_rpc import OdooClient
 from gateway.services.binding_service import get_bindings
 
+
+def compute_user_permissions(odoo_groups: list[str]) -> tuple[str, list[str]]:
+    """
+    Phân tích nhóm Odoo native (res.groups) → Role category & Tool Whitelist.
+    Đảm bảo Security Guardrail được thực thi bằng code Python (Deterministic RBAC),
+    không dựa hoàn toàn vào Prompt của LLM (tránh prompt injection / hallucination).
+    """
+    is_admin = any("Quản trị viên" in g or "Administrator" in g or "Access Rights" in g for g in odoo_groups)
+    is_sales_mgr = is_admin or any("Bán hàng / Quản trị viên" in g or "Sales / Administrator" in g for g in odoo_groups)
+    is_sales_staff = is_sales_mgr or any("Bán hàng" in g or "Sales" in g for g in odoo_groups)
+    is_inventory_staff = is_admin or any("Tồn kho" in g or "Inventory" in g for g in odoo_groups)
+    is_accountant = is_admin or any("Kế toán" in g or "Accounting" in g or "Invoicing" in g for g in odoo_groups)
+
+    allowed = set(["search_records", "list_products"])
+    if is_sales_staff or is_sales_mgr or is_admin:
+        allowed.update(["create_sale_order", "create_record", "update_record", "get_sale_order"])
+    if is_inventory_staff or is_admin:
+        allowed.update(["get_stock_quant", "search_records"])
+    if is_accountant or is_sales_mgr or is_admin:
+        allowed.update(["aggregate_records"])
+
+    if is_admin or is_sales_mgr:
+        role_cat = "sales_manager"
+    elif is_sales_staff:
+        role_cat = "sales_staff"
+    elif is_inventory_staff:
+        role_cat = "inventory_staff"
+    elif is_accountant:
+        role_cat = "accountant"
+    else:
+        role_cat = "viewer"
+
+    return role_cat, list(allowed)
+
+
 class PermissionService:
     """
-    Zero-Trust Auth Gateway — Minimal Surface.
-    Chỉ làm đúng 1 việc: Xác minh User tồn tại & active trên Odoo.
-    Không map role, không phán xét quyền → Giao toàn bộ cho Claude suy luận từ raw groups.
+    Zero-Trust Auth Gateway — Hybrid Enforcement.
+    1. Code Layer: Lấy Odoo groups live, kiểm tra active, tính toán tool whitelist ở Python.
+    2. Prompt Layer: Gửi raw groups + user identity vào system prompt để LLM phản hồi chính xác.
     """
     def __init__(self):
         self.odoo_client = OdooClient()
@@ -56,7 +91,7 @@ class PermissionService:
                 )
             }
 
-        # Đọc danh sách nhóm quyền thực tế từ Odoo — gửi thẳng cho Claude suy luận
+        # Đọc danh sách nhóm quyền thực tế từ Odoo
         odoo_groups = []
         gids = user.get("all_group_ids", [])
         if gids:
@@ -71,17 +106,21 @@ class PermissionService:
             except Exception as e:
                 print(f"⚠️ [PermissionService] Lỗi read res.groups: {e}")
 
+        role_category, allowed_tools = compute_user_permissions(odoo_groups)
+
         user_info = {
             "odoo_user_id": user.get("id"),
             "email": email,
             "full_name": full_name,
             "is_active_odoo": is_active,
             "odoo_groups": odoo_groups,
+            "role_category": role_category,
+            "allowed_tools": allowed_tools,
         }
 
         return {
             "allowed": True,
             "email": email,
             "user_info": user_info,
-            "official_role": "authenticated",   # Tương thích backward, Claude không dùng
+            "official_role": role_category,
         }
