@@ -43,6 +43,7 @@ class OdooUserContext:
             "is_active_odoo": self.is_active,
             "odoo_groups": self.odoo_groups,
             "role_category": self.role_category,
+            "role": self.role_category,
             "allowed_tools": self.allowed_tools,
             "allowed_models": self.allowed_models,
             "company_id": self.company_id,

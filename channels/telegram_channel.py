@@ -213,11 +213,15 @@ class TelegramChannel(BaseChannel):
                 await self.send_message(user_id, auth["reason"], parse_mode=None)
             else:
                 u = auth["user_info"]
+                groups = u.get("odoo_groups", [])
+                g_str = "\n".join(f"  • {g}" for g in groups) if groups else "  • (Không có)"
+                role_name = u.get("role", u.get("role_category", "user"))
                 await self.send_message(user_id,
-                    f"👤 TÀI KHOẢN\n"
-                    f"• Tên: {u['full_name']}\n"
-                    f"• Vai trò: {u['role'].upper()}\n"
-                    f"• Email: {u['email']}",
+                    f"👤 THÔNG TIN TÀI KHOẢN ODOO SAAS\n"
+                    f"• Họ tên: {u.get('full_name')}\n"
+                    f"• Email: {u.get('email')}\n"
+                    f"• Vai trò chính: {role_name.upper()}\n\n"
+                    f"📋 Nhóm quyền Odoo Live:\n{g_str}",
                     parse_mode=None
                 )
             return
