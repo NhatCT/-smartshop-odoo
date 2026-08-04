@@ -12,7 +12,12 @@ from gateway.services.binding_service import get_bindings, save_bindings
 from gateway.services.otp_service import OTPService
 from gateway.services.permission_service import PermissionService
 
-_APPROVAL_SECRET = os.getenv("APPROVAL_TOKEN_SECRET") or os.getenv("ODOO_PASSWORD") or "smartshop-approval"
+import secrets
+
+_APPROVAL_SECRET = os.getenv("APPROVAL_TOKEN_SECRET") or os.getenv("ODOO_PASSWORD")
+if not _APPROVAL_SECRET:
+    _APPROVAL_SECRET = secrets.token_urlsafe(32)
+    print("⚠️ [SecurityGateway] APPROVAL_TOKEN_SECRET is missing from env. Using secure ephemeral secret.")
 
 
 def generate_approval_token(order_name: str, approver_id: str, ttl_seconds: int = 86400) -> str:

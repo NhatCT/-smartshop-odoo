@@ -12,6 +12,7 @@ class SkillLoader:
     INTENT_TOOL_MAP = {
         "INVENTORY_LOOKUP": {"get_stock_quant", "search_records", "list_products"},
         "PRODUCT_SEARCH": {"search_records", "list_products"},
+        "ORDER_LOOKUP": {"get_sale_order", "search_records", "list_products"},
         "SALE_ORDER_CREATE": {"create_sale_order", "search_records", "get_sale_order", "list_products"},
         "PARTNER_LOOKUP": {"search_records"},
         "ANALYTICS_REPORT": {"aggregate_records", "search_records"},

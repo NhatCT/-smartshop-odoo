@@ -193,14 +193,16 @@ class ClaudeAdapter:
 
                     # Model-Level Security Enforcement
                     target_model = tool_args.get("model")
-                    if allowed_models and target_model and target_model not in allowed_models:
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": tool_id,
-                            "content": f"⛔ ACCESS DENIED: Nhóm quyền Odoo của bạn ({role.upper()}) không được phép truy vấn model '{target_model}'.",
-                            "is_error": True
-                        })
-                        continue
+                    allowed_models_list = u_info.get("allowed_models")
+                    if allowed_models_list is not None and target_model:
+                        if target_model not in allowed_models_list:
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": tool_id,
+                                "content": f"⛔ ACCESS DENIED: Nhóm quyền Odoo của bạn ({role.upper()}) không được phép truy vấn model '{target_model}'.",
+                                "is_error": True
+                            })
+                            continue
 
                     # KỸ THUẬT 3: Graceful Degradation for Tool/Odoo Failures
                     try:

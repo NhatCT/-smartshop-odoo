@@ -4,6 +4,7 @@ Lớp chuyên trách pull thông tin Người dùng, Nhóm quyền (res.groups) 
 Cung cấp Permission Context Card chuẩn hóa để gửi vào System Prompt và Python Security Gateway.
 """
 
+import time
 from dataclasses import dataclass, field
 from data_layer.connectors.odoo_rpc import OdooClient
 
@@ -112,7 +113,7 @@ class OdooRoleContextService:
                     fields=["id", "full_name"],
                     limit=100
                 )
-                skip = ["Technical", "B qua", "Địa chỉ", "Trình chỉnh", "Trang web"]
+                skip = ["Technical", "Bỏ qua", "Địa chỉ", "Trình chỉnh", "Trang web"]
                 odoo_groups = [
                     str(g.get("full_name", "")) for g in groups 
                     if g.get("full_name") and not any(k in str(g.get("full_name", "")) for k in skip)
