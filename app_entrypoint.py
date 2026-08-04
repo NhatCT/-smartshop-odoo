@@ -93,6 +93,10 @@ def health_check():
     return {"status": "ok", "version": "2.1"}
 
 
+# Global MCP wrapper (set sau khi MCP session khởi động)
+_mcp_wrapper: MCPClientWrapper | None = None
+
+
 @app.get("/metrics")
 def get_metrics():
     """Metrics endpoint cho monitoring — Langfuse + MCP cache stats."""
@@ -114,30 +118,6 @@ async def on_shutdown():
 
 # Global agents — singleton
 _claude_adapter = ClaudeAdapter()
-
-
-
-# Global MCP wrapper (set sau khi MCP session khởi động)
-_mcp_wrapper: MCPClientWrapper | None = None
-
-
-@app.on_event("shutdown")
-async def on_shutdown():
-    """Flush Langfuse traces khi server shutdown — tránh mất traces."""
-    flush_traces()
-
-
-# ------------------------------------------------------------------
-# Core Message Handler — @observe decorated cho Langfuse tracing
-# ------------------------------------------------------------------
-
-# Global agents — singleton
-_claude_adapter = ClaudeAdapter()
-
-
-
-# Global MCP wrapper (set sau khi MCP session khởi động)
-_mcp_wrapper: MCPClientWrapper | None = None
 
 
 try:
@@ -230,9 +210,11 @@ async def _handle_approval_callback(callback_data: str, approver_id: str) -> str
         return "⛔ Token xác thực không hợp lệ. Thao tác bị từ chối."
 
     if action == "approve":
-        return f"✅ **{order_name}** đã được PHÊDUYỆT bởi Manager!\nHệ thống đang chốt đơn..."
+        _, msg = _claude_adapter.fulfillment_service.approve_order(order_name)
+        return msg
     elif action == "reject":
-        return f"❌ **{order_name}** đã bị TỪ CHỐI.\nThông báo sẽ được gửi lại cho nhân viên."
+        _, msg = _claude_adapter.fulfillment_service.reject_order(order_name)
+        return msg
     return "❓ Hành động không xác định."
 
 

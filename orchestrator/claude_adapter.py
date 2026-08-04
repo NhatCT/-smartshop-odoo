@@ -7,6 +7,7 @@ from gateway.services.notification_service import NotificationService
 from orchestrator.prompts import get_prompt_blocks
 from orchestrator.memory_service import ConversationMemoryService
 from orchestrator.draft_order_service import OrderDraftStateService
+from orchestrator.order_fulfillment_service import OrderFulfillmentService
 from orchestrator.entity_resolver import SmartEntityResolver
 from orchestrator.intent_router import IntentRouter
 from orchestrator.skill_loader import SkillLoader
@@ -76,6 +77,7 @@ class ClaudeAdapter:
         self.notification_service = NotificationService()
         self.memory_service = ConversationMemoryService(max_messages=10, ttl_seconds=3600)
         self.draft_service = OrderDraftStateService(ttl_seconds=1800)
+        self.fulfillment_service = OrderFulfillmentService(draft_service=self.draft_service)
         self.entity_resolver = SmartEntityResolver()
         self.intent_router = IntentRouter()
         self.skill_loader = SkillLoader()
@@ -118,6 +120,7 @@ class ClaudeAdapter:
 
         # Tiền xử lý Smart Entity Resolver (Pre-processing Partner / Product)
         context_hints = [f"[INTENT CLASSIFIED]: {intent}"]
+        product = None
         cust_match = re.search(r'(?:khách hàng|khách|partner)\s*(?:số|id)?\s*([0-9a-zA-Z_\sàáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳỵỷỹđ]+)', text, re.IGNORECASE)
         if cust_match:
             query = cust_match.group(1).strip()
@@ -197,7 +200,9 @@ class ClaudeAdapter:
                     break
 
                 tool_results = []
-                allowed_models_list = u_info.get("allowed_models")
+                # Model-Level Security Enforcement — DEFAULT DENY.
+                # Nếu user_info không có allowed_models → không cho phép truy vấn model nào.
+                allowed_models_list = u_info.get("allowed_models") or []
 
                 for tu in tool_uses:
                     tool_name = tu.name
@@ -205,17 +210,15 @@ class ClaudeAdapter:
                     tool_id = tu.id
                     tools_called_log.append(tool_name)
 
-                    # Model-Level Security Enforcement
                     target_model = tool_args.get("model")
-                    if allowed_models_list is not None and target_model:
-                        if target_model not in allowed_models_list:
-                            tool_results.append({
-                                "type": "tool_result",
-                                "tool_use_id": tool_id,
-                                "content": f"⛔ ACCESS DENIED: Nhóm quyền Odoo của bạn ({role.upper()}) không được phép truy vấn model '{target_model}'.",
-                                "is_error": True
-                            })
-                            continue
+                    if target_model and target_model not in allowed_models_list:
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "content": f"⛔ ACCESS DENIED: Nhóm quyền Odoo của bạn ({role.upper()}) không được phép truy vấn model '{target_model}'.",
+                            "is_error": True
+                        })
+                        continue
 
                     try:
                         res = await mcp_session.call_tool(tool_name, arguments=tool_args)
@@ -266,6 +269,9 @@ class ClaudeAdapter:
                         data = json.loads(match.group(1))
                         total = data.get("total", 0)
                         total_fmt = f"{float(total):,.0f} VNĐ" if total else "N/A"
+                        order_name = data.get("order_name", "Order")
+                        # Đăng ký ánh xạ order -> draft cho callback duyệt
+                        self.fulfillment_service.register_order_reference(user_id, order_name)
                         manager_chat_id = os.getenv("ADMIN_CHAT_ID", "123456789")
                         success = self.notification_service.send_approval_request(
                             data.get("order_name", "Order"),

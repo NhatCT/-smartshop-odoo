@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
+import os
 from typing import Awaitable, Callable
 
 from fastapi import APIRouter, Request
@@ -9,6 +12,22 @@ from .base_channel import BaseChannel, ChannelMessage
 
 webhook_router = APIRouter()
 _message_handler: Callable[[ChannelMessage], Awaitable[str]] | None = None
+
+WEBHOOK_SECRET = os.getenv("N8N_APPROVAL_WEBHOOK_SECRET", "")
+if not WEBHOOK_SECRET:
+    print("⚠️ [WEBHOOK] N8N_APPROVAL_WEBHOOK_SECRET chưa được cấu hình — mọi request approval sẽ bị từ chối.")
+
+
+def _verify_webhook_signature(payload: bytes, signature_header: str) -> bool:
+    """Xác thực HMAC-SHA256 signature từ n8n (X-Webhook-Signature header)."""
+    if not WEBHOOK_SECRET or not signature_header:
+        return False
+    expected = hmac.new(
+        WEBHOOK_SECRET.encode("utf-8"),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(signature_header, expected)
 
 
 class WebhookChannel(BaseChannel):
@@ -31,6 +50,12 @@ class WebhookChannel(BaseChannel):
 
 @webhook_router.post("/api/webhook/approval")
 async def n8n_approval_callback(request: Request):
+    # 🔐 Xác thực HMAC signature trước khi xử lý bất kỳ request nào
+    raw_body = await request.body()
+    signature = request.headers.get("X-Webhook-Signature", "")
+    if not _verify_webhook_signature(raw_body, signature):
+        return {"status": "error", "message": "Invalid webhook signature"}, 401
+
     data = await request.json()
     action = data.get("action")  # "approve" or "reject"
     order_name = data.get("order_name")

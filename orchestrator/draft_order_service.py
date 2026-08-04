@@ -1,6 +1,6 @@
 """
 Order Draft State Service — SmartShop Odoo 19 AI Gateway
-Quản lý Trạng thái Đơn nháp (Draft Order State Machine) tương thích 100% với LangGraph State Dict Shape.
+Quản lý Trạng thái Đơn nháp (Draft Order State Machine).
 """
 
 import time
@@ -36,31 +36,6 @@ class DraftOrder:
     def is_complete(self) -> bool:
         return self.customer_id is not None and len(self.items) > 0
 
-    def to_langgraph_state(self) -> dict:
-        """
-        Chuẩn hóa LangGraph State Dict Shape.
-        Đảm bảo khi migrate sang LangGraph thật, code logic bên trong giữ nguyên 100%.
-        """
-        return {
-            "customer_data": {
-                "id": self.customer_id,
-                "name": self.customer_name
-            },
-            "order_data": [
-                {
-                    "product_id": item.product_id,
-                    "name": item.name,
-                    "qty": item.qty,
-                    "price": item.unit_price,
-                    "subtotal": item.subtotal
-                }
-                for item in self.items
-            ],
-            "total_amount": self.total_amount,
-            "status": self.status,
-            "is_complete": self.is_complete()
-        }
-
     def format_summary(self) -> str:
         """Xuất bản tóm tắt đơn nháp theo Markdown."""
         cust_str = f"**{self.customer_name}** (ID: {self.customer_id})" if self.customer_id else "❌ _Chưa chọn_"
@@ -90,7 +65,6 @@ class OrderDraftStateService:
     """
     def __init__(self, ttl_seconds: int = 1800):
         self._store: dict[str, DraftOrder] = {}
-        self._idempotency_keys: dict[str, float] = {}
         self.ttl_seconds = ttl_seconds
 
     def get_draft(self, user_id: str) -> DraftOrder:
@@ -140,14 +114,3 @@ class OrderDraftStateService:
         """Xóa bỏ đơn nháp hiện tại của user."""
         if user_id in self._store:
             del self._store[user_id]
-
-    def check_idempotency(self, key: str, window_seconds: int = 30) -> bool:
-        """Khóa trùng lặp lệnh (Idempotency Key Lock)."""
-        now = time.time()
-        last_time = self._idempotency_keys.get(key, 0)
-
-        if now - last_time < window_seconds:
-            return False
-
-        self._idempotency_keys[key] = now
-        return True

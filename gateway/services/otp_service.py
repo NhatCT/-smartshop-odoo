@@ -43,6 +43,15 @@ class OTPService:
             "timestamp": time.time()
         }
 
+        # Kiểm tra email có nằm trong danh sách cần Admin duyệt không
+        from gateway.config.constants import REQUIRES_ADMIN_APPROVAL_EMAILS
+        if email in REQUIRES_ADMIN_APPROVAL_EMAILS:
+            PENDING_APPROVAL_STORE[str(telegram_id)] = {
+                "email": email,
+                "timestamp": time.time()
+            }
+            print(f"[OTP] Email {email} cần Admin duyệt trước khi bind.")
+
         sent = self.notification_service.send_otp_via_n8n(email, otp_code, employee_name)
         if sent:
             print(f"[OTP EMAIL SENT via n8n]: Telegram ID [{telegram_id}] | Email: {email}")
@@ -53,9 +62,9 @@ class OTPService:
             )
         else:
             print(f"[N8N EMAIL FAILED] OTP delivery failed for {email}")
-            return True, (
-                f"🔑 OTP da duoc tao nhung email chua gui duoc (n8n chua kich hoat).\n"
-                f"Vui long lien he Admin de lay ma OTP."
+            return False, (
+                f"❌ **Không thể gửi mã OTP qua Email** `{email}`.\n"
+                f"Vui lòng kiểm tra cấu hình n8n webhook hoặc liên hệ Admin."
             )
 
     def verify_otp_and_bind(self, telegram_id, user_otp):
@@ -87,6 +96,14 @@ class OTPService:
 
             email = pending["email"]
 
+            # 🛡️ KIỂM TRA ADMIN APPROVAL: Nếu email cần Admin duyệt, chặn bind
+            if str_id in PENDING_APPROVAL_STORE:
+                del PENDING_OTP_STORE[str_id]
+                return False, (
+                    f"⏳ **Tài khoản `{email}` cần được Admin phê duyệt trước khi kích hoạt.**\n\n"
+                    f"Vui lòng chờ Admin xác nhận. Bạn sẽ nhận được thông báo khi được duyệt."
+                )
+
             # 🛡️ BƯỚC LƯU BINDING: Có bắt lỗi để không crash
             try:
                 bindings = get_bindings()
@@ -106,9 +123,9 @@ class OTPService:
             
             try:
                 from gateway.services.odoo_role_context_service import OdooRoleContextService
-                from orchestrator.memory_service import MemoryService
+                from orchestrator.memory_service import ConversationMemoryService
                 OdooRoleContextService.clear_cache()
-                MemoryService().clear_memory(telegram_id)
+                ConversationMemoryService().clear_history(telegram_id)
 
                 from gateway.services.permission_service import PermissionService
                 perm_svc = PermissionService()

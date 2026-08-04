@@ -4,6 +4,8 @@ from typing import Callable, Awaitable
 
 from .base_channel import BaseChannel, ChannelMessage
 from data_layer.connectors.odoo_rpc import OdooClient
+from gateway.rate_limiter import RateLimiter, get_rate_limiter
+from gateway.idempotency import get_idempotency_guard, should_dedup
 
 LIVECHAT_POLL_INTERVAL = 5
 BOT_AUTHOR_PREFIX = "SmartShop AI"
@@ -18,6 +20,8 @@ class LiveChatChannel(BaseChannel):
         self._odoo = OdooClient()
         self._processed_msg_ids: set[int] = set()
         self._channel_watermarks: dict[int, int] = {}
+        self._rate_limiter: RateLimiter = get_rate_limiter()
+        self._idempotency = get_idempotency_guard()
 
     async def send_message(
         self,
@@ -113,6 +117,19 @@ class LiveChatChannel(BaseChannel):
 
                 print(f"   💬 [LIVECHAT] Channel {channel_id} | {author_name}: {body[:50]}")
 
+                # Rate limiting
+                allowed, rate_info = self._rate_limiter.is_allowed(str(channel_id))
+                if not allowed:
+                    await self.send_message(str(channel_id), rate_info["message"])
+                    continue
+
+                # Idempotency check
+                if should_dedup(body):
+                    is_dup, cached = self._idempotency.check(str(channel_id), body)
+                    if is_dup and cached:
+                        await self.send_message(str(channel_id), cached)
+                        continue
+
                 channel_msg = ChannelMessage(
                     channel="livechat",
                     user_id=str(channel_id),
@@ -130,6 +147,8 @@ class LiveChatChannel(BaseChannel):
                     response = await message_handler(channel_msg)
                     if response:
                         await self.send_message(str(channel_id), response)
+                        if should_dedup(body):
+                            self._idempotency.store(str(channel_id), body, response)
                 except Exception as ex:
                     print(f"   ❌ [LIVECHAT HANDLER]: {ex}")
 
