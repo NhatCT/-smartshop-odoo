@@ -116,14 +116,15 @@ class OdooRoleContextService:
                 groups = self.odoo_client.search_read(
                     model="res.groups",
                     domain=[["id", "in", gids]],
-                    fields=["id", "full_name"],
+                    fields=["id", "name", "full_name", "display_name"],
                     limit=100
                 )
                 skip = ["Technical", "Bỏ qua", "Địa chỉ", "Trình chỉnh", "Trang web"]
-                odoo_groups = [
-                    str(g.get("full_name", "")) for g in groups 
-                    if g.get("full_name") and not any(k in str(g.get("full_name", "")) for k in skip)
-                ]
+                odoo_groups = []
+                for g in groups:
+                    g_name = g.get("full_name") or g.get("display_name") or g.get("name") or ""
+                    if g_name and not any(k in str(g_name) for k in skip):
+                        odoo_groups.append(str(g_name))
             except Exception as e:
                 print(f"⚠️ [OdooRoleContextService] Lỗi read res.groups: {e}")
 
