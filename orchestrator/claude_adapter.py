@@ -82,14 +82,17 @@ class ClaudeAdapter:
         self.model_router = ModelRouter()
 
     async def handle_message(self, user_id: str, text: str, user_info: dict, mcp_session) -> str:
-        # Xử lý lệnh xóa bộ nhớ hội thoại
+        # Hỗ trợ cả dict trực tiếp lẫn nested dict từ Auth Gateway
+        u_info = user_info.get("user_info", user_info) if isinstance(user_info, dict) else {}
+        email = u_info.get("email")
+
+        # Xử lý lệnh xóa bộ nhớ hội thoại và xóa cache quyền Odoo
         if text.strip().lower() in ("/clear", "/reset"):
             self.memory_service.clear_history(user_id)
             self.draft_service.clear_draft(user_id)
-            return "🧹 **Đã xóa bộ nhớ hội thoại và đơn nháp!** Bạn có thể bắt đầu chủ đề mới."
-
-        # Hỗ trợ cả dict trực tiếp lẫn nested dict từ Auth Gateway
-        u_info = user_info.get("user_info", user_info) if isinstance(user_info, dict) else {}
+            from gateway.services.odoo_role_context_service import OdooRoleContextService
+            OdooRoleContextService.clear_cache(email)
+            return "🧹 **Đã xóa bộ nhớ hội thoại và làm mới Cache quyền Odoo!** Bạn có thể bắt đầu chủ đề mới."
         role = u_info.get("role_category", "viewer")
 
         # LỚP 1: Intent Router
