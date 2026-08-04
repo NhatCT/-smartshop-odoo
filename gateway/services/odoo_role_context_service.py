@@ -17,6 +17,8 @@ class OdooUserContext:
     odoo_groups: list[str] = field(default_factory=list)
     role_category: str = "viewer"
     allowed_tools: list[str] = field(default_factory=list)
+    allowed_models: list[str] = field(default_factory=list)
+    company_id: int | None = None
 
     def format_prompt_block(self) -> str:
         """Tạo thẻ Context phân quyền sạch sẽ để bơm trực tiếp vào System Prompt cho Claude."""
@@ -41,6 +43,8 @@ class OdooUserContext:
             "odoo_groups": self.odoo_groups,
             "role_category": self.role_category,
             "allowed_tools": self.allowed_tools,
+            "allowed_models": self.allowed_models,
+            "company_id": self.company_id,
             "prompt_block": self.format_prompt_block(),
         }
 
@@ -58,7 +62,7 @@ class OdooRoleContextService:
             records = self.odoo_client.search_read(
                 model="res.users",
                 domain=[["login", "=", email.lower().strip()], ["active", "in", [True, False]]],
-                fields=["id", "name", "login", "active", "all_group_ids"],
+                fields=["id", "name", "login", "active", "company_id", "all_group_ids"],
                 limit=1
             )
         except Exception as e:
@@ -71,6 +75,9 @@ class OdooRoleContextService:
         user = records[0]
         full_name = user.get("name") or email.split("@", 1)[0].replace(".", " ").title()
         is_active = user.get("active", True)
+
+        comp = user.get("company_id")
+        company_id = comp[0] if (isinstance(comp, (list, tuple)) and comp) else comp
 
         odoo_groups = []
         gids = user.get("all_group_ids", [])
@@ -103,13 +110,20 @@ class OdooRoleContextService:
         is_accountant_mgr = any("Kế toán / Quản trị viên" in g or "Accounting / Administrator" in g for g in odoo_groups)
         is_accountant = is_accountant_mgr or any("Kế toán" in g or "Accounting" in g or "Invoicing" in g for g in odoo_groups)
 
-        allowed = set(["search_records", "list_products"])
+        allowed_tools = set(["search_records", "list_products"])
+        allowed_models = set(["product.template", "product.product"])
+
         if is_sales_staff or is_sales_mgr or is_sys_admin:
-            allowed.update(["create_sale_order", "create_record", "update_record", "get_sale_order"])
+            allowed_tools.update(["create_sale_order", "create_record", "update_record", "get_sale_order"])
+            allowed_models.update(["sale.order", "sale.order.line", "res.partner"])
+
         if is_inventory_staff or is_inventory_mgr or is_sys_admin:
-            allowed.update(["get_stock_quant", "search_records"])
+            allowed_tools.update(["get_stock_quant", "search_records"])
+            allowed_models.update(["stock.quant", "stock.picking", "stock.location"])
+
         if is_accountant or is_accountant_mgr or is_sales_mgr or is_sys_admin:
-            allowed.update(["aggregate_records"])
+            allowed_tools.update(["aggregate_records"])
+            allowed_models.update(["account.move", "account.move.line", "res.partner"])
 
         if is_sys_admin or is_sales_mgr:
             role_cat = "sales_manager"
@@ -129,5 +143,7 @@ class OdooRoleContextService:
             is_active=is_active,
             odoo_groups=odoo_groups,
             role_category=role_cat,
-            allowed_tools=list(allowed)
+            allowed_tools=list(allowed_tools),
+            allowed_models=list(allowed_models),
+            company_id=company_id
         )

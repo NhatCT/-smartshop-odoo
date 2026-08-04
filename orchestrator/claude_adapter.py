@@ -5,6 +5,8 @@ import anthropic
 from gateway.services.notification_service import NotificationService
 from orchestrator.prompts import build_system_prompt
 from orchestrator.memory_service import ConversationMemoryService
+from orchestrator.draft_order_service import OrderDraftStateService
+from orchestrator.entity_resolver import SmartEntityResolver
 
 _anthropic_client = None
 def get_client():
@@ -18,12 +20,15 @@ class ClaudeAdapter:
     def __init__(self):
         self.notification_service = NotificationService()
         self.memory_service = ConversationMemoryService(max_messages=10, ttl_seconds=3600)
+        self.draft_service = OrderDraftStateService(ttl_seconds=1800)
+        self.entity_resolver = SmartEntityResolver()
 
     async def handle_message(self, user_id: str, text: str, user_info: dict, mcp_session) -> str:
         # Xử lý lệnh xóa bộ nhớ hội thoại
         if text.strip().lower() in ("/clear", "/reset"):
             self.memory_service.clear_history(user_id)
-            return "🧹 **Đã xóa bộ nhớ hội thoại!** Bạn có thể bắt đầu chủ đề mới."
+            self.draft_service.clear_draft(user_id)
+            return "🧹 **Đã xóa bộ nhớ hội thoại và đơn nháp!** Bạn có thể bắt đầu chủ đề mới."
 
         # Hỗ trợ cả dict trực tiếp lẫn nested dict từ Auth Gateway
         u_info = user_info.get("user_info", user_info) if isinstance(user_info, dict) else {}
@@ -31,9 +36,37 @@ class ClaudeAdapter:
         # Sinh System Prompt từ raw Odoo groups + user identity
         system_prompt = build_system_prompt(u_info)
 
+        # Tiền xử lý Smart Entity Resolver (Pre-processing Partner / Product)
+        context_hints = []
+        cust_match = re.search(r'(?:khách hàng|khách|partner)\s*(?:số|id)?\s*([0-9a-zA-Z_\sàáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳỵỷỹđ]+)', text, re.IGNORECASE)
+        if cust_match:
+            query = cust_match.group(1).strip()
+            partner = self.entity_resolver.resolve_partner(query)
+            if partner:
+                self.draft_service.set_customer(user_id, partner["id"], partner["name"])
+                context_hints.append(f"[ENTERPRISE RESOLVER] Đã xác thực Khách hàng: {partner['name']} (ID: {partner['id']})")
+
+        prod_match = re.search(r'(?:sản phẩm|mặt hàng|món|sp)\s*([0-9a-zA-Z_\sàáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳỵỷỹđ]+)', text, re.IGNORECASE)
+        if prod_match:
+            query = prod_match.group(1).strip()
+            product = self.entity_resolver.resolve_product(query)
+            if product:
+                self.draft_service.add_item(user_id, product["id"], product["name"], qty=1.0, unit_price=product.get("list_price", 0.0))
+                context_hints.append(f"[ENTERPRISE RESOLVER] Đã xác thực Sản phẩm: {product['name']} (ID: {product['id']}, Giá: {product.get('list_price', 0):,.0f} VNĐ)")
+
+        # Thêm thông tin Đơn nháp hiện tại vào System Context nếu có
+        draft = self.draft_service.get_draft(user_id)
+        if draft.customer_id or draft.items:
+            context_hints.append(draft.format_summary())
+
+        if context_hints:
+            augmented_text = f"{text}\n\n" + "\n".join(context_hints)
+        else:
+            augmented_text = text
+
         # Nếu nhận lệnh duyệt từ Webhook
         if text.startswith("[MANAGER_APPROVED]"):
-            text = text + "\nManager đã duyệt. Hãy tiến hành tạo Sale Order trên Odoo."
+            augmented_text = augmented_text + "\nManager đã duyệt. Hãy tiến hành tạo Sale Order trên Odoo."
 
         # Chỉ truyền các tool nghiệp vụ phù hợp với quyền Odoo thực tế của User (Deterministic RBAC)
         BUSINESS_TOOLS = {
@@ -69,7 +102,7 @@ class ClaudeAdapter:
 
         # Nạp lịch sử chat đa lượt của user_id (Multi-turn Context Memory)
         past_history = self.memory_service.get_history(user_id)
-        messages = list(past_history) + [{"role": "user", "content": text}]
+        messages = list(past_history) + [{"role": "user", "content": augmented_text}]
         final_text = ""
 
         try:
@@ -94,16 +127,30 @@ class ClaudeAdapter:
                             final_text += b.text
                     break
 
-                # Execute MCP tool calls and feed results back to Claude
+                # Execute MCP tool calls with Model-Level Guardrails Enforcement
                 if not mcp_session:
                     final_text = "⚠️ Không thể kết nối MCP session để thực thi lệnh."
                     break
 
                 tool_results = []
+                allowed_models = set(u_info.get("allowed_models", []))
+
                 for tu in tool_uses:
                     tool_name = tu.name
                     tool_args = tu.input
                     tool_id = tu.id
+
+                    # Model-Level Security Enforcement
+                    target_model = tool_args.get("model")
+                    if allowed_models and target_model and target_model not in allowed_models:
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "content": f"⛔ ACCESS DENIED: Nhóm quyền Odoo của bạn ({u_info.get('role_category', 'user').upper()}) không được phép truy vấn model '{target_model}'.",
+                            "is_error": True
+                        })
+                        continue
+
                     try:
                         res = await mcp_session.call_tool(tool_name, arguments=tool_args)
                         if hasattr(res, "content") and res.content and hasattr(res.content[0], "text"):
@@ -119,7 +166,7 @@ class ClaudeAdapter:
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": tool_id,
-                            "content": f"Lỗi gọi tool {tool_name}: {e}",
+                            "content": f"⚠️ Lỗi Odoo RPC [{tool_name}]: {e}",
                             "is_error": True
                         })
 
