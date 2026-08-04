@@ -269,6 +269,20 @@ class ClaudeAdapter:
 
             res_output = final_text if final_text else "Tôi đã thực hiện xong."
 
+            # Tự động đính kèm Nút bấm Inline Keyboards Telegram nếu có sản phẩm xác thực
+            resolved_prod_id = product.get("id") if ('product' in locals() and product) else None
+            if resolved_prod_id and "[INLINE_KEYBOARD]" not in res_output:
+                kb_data = [
+                    [
+                        {"text": "🛒 Tạo đơn nháp", "callback_data": f"action:draft_order:{resolved_prod_id}"},
+                        {"text": "📦 Kiểm kho", "callback_data": f"action:check_stock:{resolved_prod_id}"}
+                    ],
+                    [
+                        {"text": "📋 Xem đơn nháp hiện tại", "callback_data": "action:view_draft"}
+                    ]
+                ]
+                res_output += f"\n\n[INLINE_KEYBOARD] {json.dumps(kb_data)}"
+
             # KỸ THUẬT 4: Ghi vết ERP Decision Audit Trail
             log_audit_decision(user_id, intent, role, tools_called_log, "SUCCESS")
 

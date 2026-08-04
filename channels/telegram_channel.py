@@ -52,17 +52,32 @@ class TelegramChannel(BaseChannel):
         metadata: dict | None = None,
         parse_mode: str | None = "Markdown"
     ) -> bool:
-        """Gửi tin nhắn về Telegram."""
+        """Gửi tin nhắn về Telegram (Hỗ trợ nút bấm Inline Keyboards tự động)."""
         url = f"{BASE_URL}/sendMessage"
+
+        reply_markup = None
+        if metadata and metadata.get("reply_markup"):
+            reply_markup = metadata["reply_markup"]
+
+        # Tự động bóc tách cờ [INLINE_KEYBOARD] từ response text
+        if "[INLINE_KEYBOARD]" in text:
+            match = re.search(r'\[INLINE_KEYBOARD\]\s*(.*)', text, re.DOTALL)
+            if match:
+                try:
+                    kb_buttons = json.loads(match.group(1).strip())
+                    reply_markup = {"inline_keyboard": kb_buttons}
+                    text = text.replace(match.group(0), "").strip()
+                except Exception as e:
+                    print(f"⚠️ [TelegramChannel] Lỗi parse INLINE_KEYBOARD: {e}")
+
         payload = {
             "chat_id": user_id,
             "text": text,
         }
         if parse_mode:
             payload["parse_mode"] = parse_mode
-        # Thêm inline keyboard nếu có
-        if metadata and metadata.get("reply_markup"):
-            payload["reply_markup"] = json.dumps(metadata["reply_markup"])
+        if reply_markup:
+            payload["reply_markup"] = json.dumps(reply_markup)
 
         encoded = json.dumps(payload).encode("utf-8")
         try:
@@ -232,11 +247,22 @@ class TelegramChannel(BaseChannel):
         except Exception:
             pass
 
+        # Chuyển đổi callback action thành câu lệnh tự nhiên cho AI
+        text_action = data
+        if data.startswith("action:draft_order:"):
+            prod_id = data.split(":")[-1]
+            text_action = f"Tạo đơn hàng nháp cho sản phẩm số {prod_id}"
+        elif data.startswith("action:check_stock:"):
+            prod_id = data.split(":")[-1]
+            text_action = f"Kiểm tra tồn kho sản phẩm số {prod_id}"
+        elif data == "action:view_draft":
+            text_action = "Xem đơn hàng nháp hiện tại"
+
         # Delegate tới message_handler với context callback
         channel_msg = ChannelMessage(
             channel="telegram",
             user_id=user_id,
-            text=data,  # callback data như "approve_SO123_abc12345"
+            text=text_action,
             raw=callback,
             metadata={"type": "callback_query", "callback_data": data}
         )

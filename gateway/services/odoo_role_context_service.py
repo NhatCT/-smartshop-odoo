@@ -51,12 +51,35 @@ class OdooUserContext:
 
 class OdooRoleContextService:
     """
-    Service kéo Role và Quyền hạn live từ Odoo.
+    Service kéo Role và Quyền hạn live từ Odoo với In-Memory TTL Cache (5 phút).
+    Tiết kiệm ~150ms RPC call cho các tin nhắn liên tiếp của cùng 1 user.
     """
-    def __init__(self, odoo_client: OdooClient | None = None):
+    def __init__(self, odoo_client: OdooClient | None = None, cache_ttl_seconds: int = 300):
         self.odoo_client = odoo_client or OdooClient()
+        self._cache: dict[str, tuple[float, OdooUserContext]] = {}
+        self.cache_ttl_seconds = cache_ttl_seconds
+
+    def clear_cache(self, email: str | None = None):
+        if email:
+            self._cache.pop(email.lower().strip(), None)
+        else:
+            self._cache.clear()
 
     def fetch_user_context(self, email: str) -> OdooUserContext | None:
+        key = email.lower().strip()
+        now = time.time()
+
+        if key in self._cache:
+            cached_time, cached_ctx = self._cache[key]
+            if now - cached_time < self.cache_ttl_seconds:
+                return cached_ctx
+
+        ctx = self._do_fetch_user_context(email)
+        if ctx:
+            self._cache[key] = (now, ctx)
+        return ctx
+
+    def _do_fetch_user_context(self, email: str) -> OdooUserContext | None:
         """Kéo thông tin người dùng và danh sách nhóm res.groups trực tiếp từ Odoo RPC."""
         try:
             records = self.odoo_client.search_read(
