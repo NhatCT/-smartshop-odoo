@@ -169,12 +169,6 @@ class ClaudeAdapter:
         messages = list(past_history) + [{"role": "user", "content": augmented_text}]
         final_text = ""
 
-        # Native Anthropic Assistant Message Array Prefill (Áp dụng cho Business Queries)
-        use_native_prefill = (intent != "GENERAL")
-        if use_native_prefill and messages and messages[-1]["role"] == "user":
-            messages.append({"role": "assistant", "content": "### 📋 KẾT LUẬN"})
-            final_text += "### 📋 KẾT LUẬN"
-
         # LỚP 6: Tool Execution Guardrail — Cap MAX_SEARCH_TURNS = 2 (Budget Safety & Fast Response)
         MAX_SEARCH_TURNS = 2
         tools_called_log = []
