@@ -206,6 +206,8 @@ class TelegramChannel(BaseChannel):
             return
 
         if lower == "/my_role":
+            from gateway.services.odoo_role_context_service import OdooRoleContextService
+            OdooRoleContextService.clear_cache()
             auth = self._gateway.process_incoming_request(user_id)
             if not auth["allowed"]:
                 await self.send_message(user_id, auth["reason"], parse_mode=None)
@@ -221,7 +223,9 @@ class TelegramChannel(BaseChannel):
             return
 
         if lower in ("/clear", "/reset"):
-            await self.send_message(user_id, "Da xoa bo nho hoi thoai!", parse_mode=None)
+            from gateway.services.odoo_role_context_service import OdooRoleContextService
+            OdooRoleContextService.clear_cache()
+            await self.send_message(user_id, "🧹 Đã xóa bộ nhớ hội thoại và làm mới Cache quyền Odoo SaaS!", parse_mode=None)
             return
 
     async def _handle_callback(
