@@ -7,6 +7,9 @@ from orchestrator.prompts import build_system_prompt
 from orchestrator.memory_service import ConversationMemoryService
 from orchestrator.draft_order_service import OrderDraftStateService
 from orchestrator.entity_resolver import SmartEntityResolver
+from orchestrator.intent_router import IntentRouter
+from orchestrator.skill_loader import SkillLoader
+from orchestrator.model_router import ModelRouter
 
 _anthropic_client = None
 def get_client():
@@ -17,11 +20,23 @@ def get_client():
 
 
 class ClaudeAdapter:
+    """
+    Enterprise Orchestrator Adapter — Anthropic 6-Layer Architecture Standard.
+    Lớp 1: IntentRouter
+    Lớp 2: PermissionGateway (OdooRoleContextService)
+    Lớp 3: SkillLoader
+    Lớp 4: PromptBuilder (Search-first + Format Control)
+    Lớp 5: ModelRouter (Haiku vs Sonnet)
+    Lớp 6: Tool Executor & Cap MAX_TOOL_TURNS = 2 (Budget Safety Guardrail)
+    """
     def __init__(self):
         self.notification_service = NotificationService()
         self.memory_service = ConversationMemoryService(max_messages=10, ttl_seconds=3600)
         self.draft_service = OrderDraftStateService(ttl_seconds=1800)
         self.entity_resolver = SmartEntityResolver()
+        self.intent_router = IntentRouter()
+        self.skill_loader = SkillLoader()
+        self.model_router = ModelRouter()
 
     async def handle_message(self, user_id: str, text: str, user_info: dict, mcp_session) -> str:
         # Xử lý lệnh xóa bộ nhớ hội thoại
@@ -33,18 +48,26 @@ class ClaudeAdapter:
         # Hỗ trợ cả dict trực tiếp lẫn nested dict từ Auth Gateway
         u_info = user_info.get("user_info", user_info) if isinstance(user_info, dict) else {}
 
-        # Sinh System Prompt từ raw Odoo groups + user identity
+        # LỚP 1: Intent Router
+        intent = self.intent_router.route_intent(text)
+        print(f"[ClaudeAdapter] Classified Intent for {user_id}: {intent}")
+
+        # LỚP 2 & 3: Permission Filter & Dynamic Skill Loader
+        user_allowed_tools = u_info.get("allowed_tools", [])
+        effective_allowed = self.skill_loader.get_effective_tools(intent, user_allowed_tools)
+
+        # LỚP 4: Anthropic Standard System Prompt Builder
         system_prompt = build_system_prompt(u_info)
 
         # Tiền xử lý Smart Entity Resolver (Pre-processing Partner / Product)
-        context_hints = []
+        context_hints = [f"[INTENT CLASSIFIED]: {intent}"]
         cust_match = re.search(r'(?:khách hàng|khách|partner)\s*(?:số|id)?\s*([0-9a-zA-Z_\sàáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳỵỷỹđ]+)', text, re.IGNORECASE)
         if cust_match:
             query = cust_match.group(1).strip()
             partner = self.entity_resolver.resolve_partner(query)
             if partner:
                 self.draft_service.set_customer(user_id, partner["id"], partner["name"])
-                context_hints.append(f"[ENTERPRISE RESOLVER] Đã xác thực Khách hàng: {partner['name']} (ID: {partner['id']})")
+                context_hints.append(f"[ENTERPRISE RESOLVER] Khách hàng xác thực: {partner['name']} (ID: {partner['id']})")
 
         prod_match = re.search(r'(?:sản phẩm|mặt hàng|món|sp)\s*([0-9a-zA-Z_\sàáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳỵỷỹđ]+)', text, re.IGNORECASE)
         if prod_match:
@@ -52,35 +75,18 @@ class ClaudeAdapter:
             product = self.entity_resolver.resolve_product(query)
             if product:
                 self.draft_service.add_item(user_id, product["id"], product["name"], qty=1.0, unit_price=product.get("list_price", 0.0))
-                context_hints.append(f"[ENTERPRISE RESOLVER] Đã xác thực Sản phẩm: {product['name']} (ID: {product['id']}, Giá: {product.get('list_price', 0):,.0f} VNĐ)")
+                context_hints.append(f"[ENTERPRISE RESOLVER] Sản phẩm xác thực: {product['name']} (ID: {product['id']}, Giá: {product.get('list_price', 0):,.0f} VNĐ)")
 
-        # Thêm thông tin Đơn nháp hiện tại vào System Context nếu có
+        # Nạp đơn nháp hiện tại nếu có
         draft = self.draft_service.get_draft(user_id)
         if draft.customer_id or draft.items:
             context_hints.append(draft.format_summary())
 
-        if context_hints:
-            augmented_text = f"{text}\n\n" + "\n".join(context_hints)
-        else:
-            augmented_text = text
+        augmented_text = f"{text}\n\n" + "\n".join(context_hints)
 
         # Nếu nhận lệnh duyệt từ Webhook
         if text.startswith("[MANAGER_APPROVED]"):
             augmented_text = augmented_text + "\nManager đã duyệt. Hãy tiến hành tạo Sale Order trên Odoo."
-
-        # Chỉ truyền các tool nghiệp vụ phù hợp với quyền Odoo thực tế của User (Deterministic RBAC)
-        BUSINESS_TOOLS = {
-            "search_records",
-            "aggregate_records",
-            "create_record",
-            "update_record",
-            "create_sale_order",
-            "get_sale_order",
-            "list_products",
-            "get_stock_quant",
-        }
-        user_allowed = set(u_info.get("allowed_tools", []))
-        effective_allowed = BUSINESS_TOOLS.intersection(user_allowed) if user_allowed else BUSINESS_TOOLS
 
         tools = []
         if mcp_session:
@@ -93,21 +99,26 @@ class ClaudeAdapter:
                             "description": t.description,
                             "input_schema": getattr(t, "input_schema", getattr(t, "inputSchema", {}))
                         })
-                print(f"[ClaudeAdapter] Tools available for {u_info.get('full_name', user_id)}: {[t['name'] for t in tools]}")
+                print(f"[ClaudeAdapter] Loaded Tools for {intent}: {[t['name'] for t in tools]}")
             except Exception as e:
                 print(f"⚠️ [ClaudeAdapter] Error listing MCP tools: {e}")
 
         client = get_client()
-        model_name = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
+
+        # LỚP 5: Dynamic Model Router (Haiku vs Sonnet)
+        model_name = self.model_router.select_model(intent)
+        print(f"[ClaudeAdapter] Selected Model for {intent}: {model_name}")
 
         # Nạp lịch sử chat đa lượt của user_id (Multi-turn Context Memory)
         past_history = self.memory_service.get_history(user_id)
         messages = list(past_history) + [{"role": "user", "content": augmented_text}]
         final_text = ""
 
+        # LỚP 6: Tool Execution Guardrail — Cap MAX_SEARCH_TURNS = 2 (Budget Safety & Fast Response)
+        MAX_SEARCH_TURNS = 2
+
         try:
-            max_turns = 4
-            for _ in range(max_turns):
+            for turn in range(MAX_SEARCH_TURNS):
                 response = client.messages.create(
                     model=model_name,
                     max_tokens=1500,
@@ -118,16 +129,13 @@ class ClaudeAdapter:
 
                 messages.append({"role": "assistant", "content": response.content})
 
-                # Check if Claude requested tool calls
                 tool_uses = [b for b in response.content if b.type == "tool_use"]
                 if not tool_uses:
-                    # Final text response from Claude
                     for b in response.content:
                         if b.type == "text":
                             final_text += b.text
                     break
 
-                # Execute MCP tool calls with Model-Level Guardrails Enforcement
                 if not mcp_session:
                     final_text = "⚠️ Không thể kết nối MCP session để thực thi lệnh."
                     break
@@ -140,7 +148,6 @@ class ClaudeAdapter:
                     tool_args = tu.input
                     tool_id = tu.id
 
-                    # Model-Level Security Enforcement
                     target_model = tool_args.get("model")
                     if allowed_models and target_model and target_model not in allowed_models:
                         tool_results.append({
@@ -172,7 +179,7 @@ class ClaudeAdapter:
 
                 messages.append({"role": "user", "content": tool_results})
 
-            # Nếu Claude gọi tool liên tục nhưng chưa kịp trả lời text (hết max_turns)
+            # Force-summarize nếu đã đạt MAX_SEARCH_TURNS để tránh ngốn API Token
             if not final_text and messages:
                 try:
                     messages.append({
