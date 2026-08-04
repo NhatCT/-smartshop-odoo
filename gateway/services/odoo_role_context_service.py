@@ -96,19 +96,19 @@ class OdooRoleContextService:
             "Quản trị viên hệ thống" in g or "Access Rights" in g
             for g in odoo_groups
         )
-        is_sales_mgr = is_sys_admin or any("Bán hàng / Quản trị viên" in g or "Sales / Administrator" in g for g in odoo_groups)
+        is_sales_mgr = any("Bán hàng / Quản trị viên" in g or "Sales / Administrator" in g for g in odoo_groups)
         is_sales_staff = is_sales_mgr or any("Bán hàng" in g or "Sales" in g for g in odoo_groups)
-        is_inventory_mgr = is_sys_admin or any("Tồn kho / Quản trị viên" in g or "Inventory / Administrator" in g for g in odoo_groups)
+        is_inventory_mgr = any("Tồn kho / Quản trị viên" in g or "Inventory / Administrator" in g for g in odoo_groups)
         is_inventory_staff = is_inventory_mgr or any("Tồn kho" in g or "Inventory" in g for g in odoo_groups)
-        is_accountant_mgr = is_sys_admin or any("Kế toán / Quản trị viên" in g or "Accounting / Administrator" in g for g in odoo_groups)
+        is_accountant_mgr = any("Kế toán / Quản trị viên" in g or "Accounting / Administrator" in g for g in odoo_groups)
         is_accountant = is_accountant_mgr or any("Kế toán" in g or "Accounting" in g or "Invoicing" in g for g in odoo_groups)
 
         allowed = set(["search_records", "list_products"])
         if is_sales_staff or is_sales_mgr or is_sys_admin:
             allowed.update(["create_sale_order", "create_record", "update_record", "get_sale_order"])
-        if is_inventory_staff or is_sys_admin:
+        if is_inventory_staff or is_inventory_mgr or is_sys_admin:
             allowed.update(["get_stock_quant", "search_records"])
-        if is_accountant or is_sales_mgr or is_sys_admin:
+        if is_accountant or is_accountant_mgr or is_sales_mgr or is_sys_admin:
             allowed.update(["aggregate_records"])
 
         if is_sys_admin or is_sales_mgr:
