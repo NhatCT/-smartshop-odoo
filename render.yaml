@@ -28,8 +28,6 @@ services:
         sync: false
       - key: N8N_OTP_WEBHOOK_URL
         sync: false
-      - key: PORT
-        value: 8000
 
   - type: cron
     name: smartshop-keepalive
