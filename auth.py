@@ -93,7 +93,7 @@ def fetch_user_context(email: str) -> dict | None:
     tools = {"search_records", "list_products"}
     models = {"product.template", "product.product"}
     if is_sales or is_sales_mgr or is_admin:
-        tools.update(["create_sale_order", "create_record", "update_record", "get_sale_order"])
+        tools.update(["create_sale_order", "create_record", "update_record", "get_sale_order", "execute_method"])
         models.update(["sale.order", "sale.order.line", "res.partner"])
     if is_inv or is_inv_mgr or is_admin:
         tools.update(["get_stock_quant"])
@@ -116,6 +116,7 @@ def fetch_user_context(email: str) -> dict | None:
     comp = u.get("company_id")
     company_id = comp[0] if isinstance(comp, (list, tuple)) and comp else comp
     print(f"[PERMISSION LIVE] {email} | role={role} | groups={len(groups)} | tools={len(tools)} | models={len(models)}")
+    print(f"[PERMISSION LIVE] tools_list={sorted(tools)}")
     return {
         "odoo_user_id": u.get("id"), "email": email,
         "full_name": u.get("name") or email.split("@")[0].replace(".", " ").title(),
