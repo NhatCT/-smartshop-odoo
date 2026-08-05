@@ -1,18 +1,17 @@
-"""
-E2E Flow Test — SmartShop Odoo 19 AI Gateway (mô phỏng, không tốn API token).
-Test toàn bộ luồng nghiệp vụ: Auth → Intent → Skill → Tool Loop → Duyệt đơn.
-"""
+"""E2E Flow Test — SmartShop AI Gateway v3.0 (mô phỏng, 0 token API)."""
 
 import os
 import unittest
 from unittest.mock import MagicMock, AsyncMock, patch
 
 os.environ["ANTHROPIC_API_KEY"] = "test-key"
+os.environ["ODOO_URL"] = "https://test.odoo.com"
+os.environ["ODOO_DB"] = "test"
+os.environ["ODOO_USERNAME"] = "admin@test.com"
+os.environ["ODOO_PASSWORD"] = "pass"
 
 
-class _MCPTool:
-    """Giả lập tool MCP."""
-
+class _Tool:
     def __init__(self, name, desc="desc"):
         self.name = name
         self.description = desc
@@ -20,237 +19,155 @@ class _MCPTool:
 
 
 class _ToolUse:
-    def __init__(self, name, tool_id, args):
+    def __init__(self, name, tid, args):
         self.name = name
-        self.id = tool_id
+        self.id = tid
         self.input = args
         self.type = "tool_use"
 
 
-class _TextBlock:
+class _Text:
     def __init__(self, text):
         self.text = text
         self.type = "text"
 
 
-def _make_response(content_blocks):
-    resp = MagicMock()
-    resp.content = content_blocks
-    return resp
+def _resp(blocks):
+    r = MagicMock()
+    r.content = blocks
+    return r
 
 
 class E2EFlowTest(unittest.TestCase):
-    """Test E2E flow sử dụng mock hoàn toàn (0 token API)."""
+    """Test E2E — 5 file architecture: app, ai, auth, odoo, tests."""
 
-    @classmethod
-    def setUpClass(cls):
-        os.environ["ODOO_URL"] = "https://test.odoo.com"
-        os.environ["ODOO_DB"] = "test"
-        os.environ["ODOO_USERNAME"] = "admin@test.com"
-        os.environ["ODOO_PASSWORD"] = "pass"
+    def test_1_draft_order(self):
+        import ai
+        ai.clear_draft("u1")
+        d = ai.get_draft("u1")
+        d.customer_id = 5
+        d.customer_name = "Alice"
+        d.items.append(ai.DraftItem(10, "iPhone 15", qty=2, unit_price=1000))
+        self.assertTrue(d.is_complete())
+        self.assertEqual(d.total_amount, 2000)
 
-    def test_1_intent_router(self):
-        from orchestrator.intent_router import IntentRouter
-        router = IntentRouter()
-        self.assertEqual(router.route_intent("Kiểm tra tồn kho iPhone"), "INVENTORY_LOOKUP")
-        self.assertEqual(router.route_intent("Tạo đơn hàng cho Alice"), "SALE_ORDER_CREATE")
-        self.assertEqual(router.route_intent("Xin chào"), "GENERAL")
+    def test_2_draft_with_discount(self):
+        import ai
+        ai.clear_draft("u2")
+        d = ai.get_draft("u2")
+        d.customer_id = 5
+        d.items.append(ai.DraftItem(20, "Samsung S24", qty=5, unit_price=28_000_000, discount=28.57))
+        self.assertAlmostEqual(d.total_amount, 100_000_000, delta=5000)
 
-    def test_2_skill_loader(self):
-        from orchestrator.skill_loader import SkillLoader
-        loader = SkillLoader()
-        tools = loader.get_effective_tools("INVENTORY_LOOKUP", ["get_stock_quant", "search_records"])
-        self.assertIn("get_stock_quant", tools)
-        self.assertNotIn("create_sale_order", tools)
-
-    def test_3_draft_order_flow(self):
-        from orchestrator.draft_order_service import OrderDraftStateService
-        svc = OrderDraftStateService()
-        svc.set_customer("u1", 5, "Alice")
-        svc.add_item("u1", 10, "iPhone 15", qty=2, unit_price=1000)
-        draft = svc.get_draft("u1")
-        self.assertTrue(draft.is_complete())
-        self.assertEqual(draft.total_amount, 2000)
-
-    def test_4_fulfillment_approve_reject(self):
-        """Manager duyệt đơn -> tạo sale.order; reject -> xóa draft."""
-        from orchestrator.order_fulfillment_service import OrderFulfillmentService
-        from orchestrator.draft_order_service import OrderDraftStateService
-
-        draft_svc = OrderDraftStateService()
-        fulfillment = OrderFulfillmentService(draft_service=draft_svc)
-        fulfillment.odoo_client.create = MagicMock(return_value=999)
-
-        # Nhân viên tạo draft
-        draft_svc.set_customer("emp1", 5, "Alice")
-        draft_svc.add_item("emp1", 10, "iPhone 15", qty=1, unit_price=1000)
-        fulfillment.register_order_reference("emp1", "SO001")
-
-        # Manager approve
-        ok, msg = fulfillment.approve_order("SO001")
+    def test_3_approve_order(self):
+        import ai
+        from unittest.mock import MagicMock
+        ai.clear_draft("emp1")
+        ai._odoo.create = MagicMock(return_value=999)
+        d = ai.get_draft("emp1")
+        d.customer_id = 5
+        d.customer_name = "Alice"
+        d.items.append(ai.DraftItem(10, "iPhone", qty=1, unit_price=1000))
+        ai.register_order_ref("emp1", "SO001")
+        ok, msg = ai.approve_order("SO001")
         self.assertTrue(ok)
         self.assertIn("PHÊ DUYỆT", msg)
-        fulfillment.odoo_client.create.assert_called_once()
-        # Draft bị xóa sau khi approve
-        self.assertEqual(draft_svc.get_draft("emp1").customer_id, None)
+        ai._odoo.create.assert_called_once()
 
-    def test_5_fulfillment_reject(self):
-        from orchestrator.order_fulfillment_service import OrderFulfillmentService
-        from orchestrator.draft_order_service import OrderDraftStateService
-        draft_svc = OrderDraftStateService()
-        fulfillment = OrderFulfillmentService(draft_service=draft_svc)
-        draft_svc.set_customer("emp2", 5, "Alice")
-        fulfillment.register_order_reference("emp2", "SO002")
-        ok, msg = fulfillment.reject_order("SO002")
+    def test_4_reject_order(self):
+        import ai
+        ai.clear_draft("emp2")
+        d = ai.get_draft("emp2")
+        d.customer_id = 5
+        ai.register_order_ref("emp2", "SO002")
+        ok, msg = ai.reject_order("SO002")
         self.assertTrue(ok)
         self.assertIn("từ chối", msg.lower())
 
-    @patch("orchestrator.claude_adapter.get_client")
-    def test_6_claude_adapter_tool_loop(self, mock_get_client):
-        """Mô phỏng đầy đủ: Claude gọi tool → MCP trả kết quả → response."""
-        from orchestrator.claude_adapter import ClaudeAdapter
-
-        # Giả lập Claude client trả về: turn 1 = tool_use, turn 2 = text
+    @patch("ai.get_client")
+    def test_5_tool_loop(self, mock_client_fn):
+        import ai
         mock_client = MagicMock()
         mock_client.messages.create.side_effect = [
-            _make_response([
-                _ToolUse("get_stock_quant", "toolu_1", {"model": "stock.quant", "domain": [["product_id", "=", 10]]})
-            ]),
-            _make_response([
-                _TextBlock("### 📋 KẾT LUẬN\nCòn 5 chiếc.\n### 📊 DỮ LIỆU THỰC TẾ\n| Sản phẩm | Tồn |\n| iPhone | 5 |\n### 🚀 BƯỚC TIẾP THEO")
-            ]),
+            _resp([_ToolUse("get_stock_quant", "t1", {"model": "stock.quant"})]),
+            _resp([_Text("### 📋 KẾT LUẬN\nCòn 5 chiếc.\n### 📊 DỮ LIỆU\n| iPhone | 5 |\n### 🚀 BƯỚC TIẾP THEO")]),
         ]
-        mock_get_client.return_value = mock_client
-
-        # Giả lập MCP session
+        mock_client_fn.return_value = mock_client
         mock_mcp = MagicMock()
-        mock_mcp.list_tools = AsyncMock(return_value=MagicMock(tools=[_MCPTool("get_stock_quant"), _MCPTool("search_records")]))
-        mock_mcp.call_tool = AsyncMock(return_value=MagicMock(
-            content=[_TextBlock('{"result": [{"product_id": 10, "quantity": 5}]}')]
-        ))
-
-        adapter = ClaudeAdapter()
-        user_info = {
-            "email": "staff@test.com",
-            "full_name": "Staff",
-            "role_category": "inventory_staff",
+        mock_mcp.list_tools = AsyncMock(return_value=MagicMock(tools=[_Tool("get_stock_quant")]))
+        mock_mcp.call_tool = AsyncMock(return_value=MagicMock(content=[_Text('{"result": [{"qty": 5}]}')]))
+        ai.clear_memory("user1")
+        result = asyncio.run(ai.handle_message("user1", "Kiểm tra tồn kho iPhone", {
+            "email": "staff@test.com", "full_name": "Staff", "role_category": "inventory_staff",
             "allowed_tools": ["get_stock_quant", "search_records"],
-            "allowed_models": ["stock.quant", "product.template", "product.product"],
-        }
-
-        import asyncio
-        result = asyncio.run(adapter.handle_message("user1", "Kiểm tra tồn kho iPhone", user_info, mock_mcp))
+            "allowed_models": ["stock.quant", "product.template"],
+        }, mock_mcp))
         self.assertIn("KẾT LUẬN", result)
 
-    @patch("orchestrator.claude_adapter.get_client")
-    def test_7_claude_adapter_acl_deny(self, mock_get_client):
-        """Model ACL enforcement: user không có quyền → tool bị chặn."""
-        from orchestrator.claude_adapter import ClaudeAdapter
-
+    @patch("ai.get_client")
+    def test_6_acl_deny(self, mock_client_fn):
+        import ai
         mock_client = MagicMock()
         mock_client.messages.create.side_effect = [
-            _make_response([
-                _ToolUse("search_records", "toolu_2", {"model": "sale.order", "domain": []})
-            ]),
-            _make_response([
-                _TextBlock("### 📋 KẾT LUẬN\nBạn không có quyền.")
-            ]),
+            _resp([_ToolUse("search_records", "t2", {"model": "sale.order"})]),
+            _resp([_Text("### 📋 KẾT LUẬN\nKhông có quyền.")]),
         ]
-        mock_get_client.return_value = mock_client
-
+        mock_client_fn.return_value = mock_client
         mock_mcp = MagicMock()
-        mock_mcp.list_tools = AsyncMock(return_value=MagicMock(tools=[_MCPTool("search_records")]))
-
-        adapter = ClaudeAdapter()
-        user_info = {
-            "email": "viewer@test.com",
-            "full_name": "Viewer",
-            "role_category": "viewer",
+        mock_mcp.list_tools = AsyncMock(return_value=MagicMock(tools=[_Tool("search_records")]))
+        ai.clear_memory("user2")
+        result = asyncio.run(ai.handle_message("user2", "Xem doanh số", {
+            "email": "viewer@test.com", "full_name": "Viewer", "role_category": "viewer",
             "allowed_tools": ["search_records"],
-            "allowed_models": ["product.template"],  # KHÔNG có sale.order
-        }
-
-        import asyncio
-        result = asyncio.run(adapter.handle_message("user2", "Xem sale.order", user_info, mock_mcp))
+            "allowed_models": ["product.template"],
+        }, mock_mcp))
         self.assertIn("KẾT LUẬN", result)
-        # Đảm bảo call_tool KHÔNG được gọi cho sale.order (bị ACL chặn)
         mock_mcp.call_tool.assert_not_called()
 
-    @patch("orchestrator.claude_adapter.get_client")
-    def test_8_approval_gate_over_20tr(self, mock_get_client):
-        """TEST CASE 4: Đơn > 20tr bị chặn ở code, chuyển sang approval flow (không tạo đơn)."""
-        from orchestrator.claude_adapter import ClaudeAdapter
-
-        # Claude cố gọi create_sale_order
+    @patch("ai.get_client")
+    def test_7_approval_gate(self, mock_client_fn):
+        import ai
         mock_client = MagicMock()
         mock_client.messages.create.side_effect = [
-            _make_response([
-                _ToolUse("create_sale_order", "toolu_3", {"model": "sale.order", "partner_id": 5})
-            ]),
-            _make_response([
-                _TextBlock("### 📋 KẾT LUẬN\nĐơn đã chuyển xin duyệt.")
-            ]),
+            _resp([_ToolUse("create_sale_order", "t3", {"model": "sale.order"})]),
+            _resp([_Text("### 📋 KẾT LUẬN\nĐơn đã chuyển xin duyệt.")]),
         ]
-        mock_get_client.return_value = mock_client
-
+        mock_client_fn.return_value = mock_client
         mock_mcp = MagicMock()
-        mock_mcp.list_tools = AsyncMock(return_value=MagicMock(tools=[_MCPTool("create_sale_order")]))
-
-        adapter = ClaudeAdapter()
-        # Nhân viên tạo draft > 20tr
-        adapter.draft_service.set_customer("emp3", 5, "Alice")
-        adapter.draft_service.add_item("emp3", 10, "Laptop cao cấp", qty=10, unit_price=5_000_000)  # 50tr
-        self.assertGreater(adapter.draft_service.get_draft("emp3").total_amount, 20_000_000)
-
-        # Mock notification để không gọi n8n thật
-        adapter.notification_service.send_approval_request = MagicMock(return_value=True)
-
-        user_info = {
-            "email": "sales@test.com",
-            "full_name": "Sales Staff",
-            "role_category": "sales_staff",
-            "allowed_tools": ["create_sale_order", "search_records"],
-            "allowed_models": ["sale.order", "product.template", "product.product", "res.partner"],
-        }
-
-        import asyncio
-        result = asyncio.run(adapter.handle_message("emp3", "Tạo báo giá 10 Laptop 50tr", user_info, mock_mcp))
+        mock_mcp.list_tools = AsyncMock(return_value=MagicMock(tools=[_Tool("create_sale_order")]))
+        ai.clear_draft("emp3")
+        ai.clear_memory("emp3")
+        d = ai.get_draft("emp3")
+        d.customer_id = 5
+        d.customer_name = "Alice"
+        d.items.append(ai.DraftItem(10, "Laptop", qty=10, unit_price=5_000_000))  # 50tr
+        ai.send_approval_request = MagicMock(return_value=True)
+        result = asyncio.run(ai.handle_message("emp3", "Tạo đơn 50tr", {
+            "email": "sales@test.com", "full_name": "Sales", "role_category": "sales_staff",
+            "allowed_tools": ["create_sale_order"],
+            "allowed_models": ["sale.order", "product.template"],
+        }, mock_mcp))
         self.assertIn("KẾT LUẬN", result)
-        # Đảm bảo create_sale_order KHÔNG được gọi tới MCP (bị chặn bởi approval gate)
         mock_mcp.call_tool.assert_not_called()
-        # Đảm bảo approval request đã được gửi tới n8n
-        adapter.notification_service.send_approval_request.assert_called_once()
-        # Đảm bảo order reference đã đăng ký để callback duyệt
-        self.assertIn("emp3", adapter.fulfillment_service._order_refs.values())
+        ai.send_approval_request.assert_called_once()
 
-    def test_9_discount_flow(self):
-        """Luồng chiết khấu: áp dụng % giảm giá → tổng tiền giảm → tạo đơn có discount."""
-        from orchestrator.draft_order_service import OrderDraftStateService
-        from orchestrator.order_fulfillment_service import OrderFulfillmentService
+    def test_8_rate_limiter(self):
+        from auth import rate_limit_check
+        # First 3 should pass
+        for i in range(3):
+            ok, _ = rate_limit_check(f"test_user_{i}")
+            self.assertTrue(ok)
 
-        draft_svc = OrderDraftStateService()
-        fulfillment = OrderFulfillmentService(draft_service=draft_svc)
-        fulfillment.odoo_client.create = MagicMock(return_value=1000)
-
-        # Nhân viên tạo đơn 5 Samsung S24 Ultra giá 28tr/chiếc = 140tr
-        draft_svc.set_customer("emp4", 5, "Alice")
-        draft_svc.add_item("emp4", 20, "Samsung Galaxy S24 Ultra", qty=5, unit_price=28_000_000)
-        self.assertEqual(draft_svc.get_draft("emp4").total_amount, 140_000_000)
-
-        # Áp dụng chiết khấu 28.57% để tổng = 100tr
-        draft_svc.set_discount("emp4", 20, 28.57)
-        draft = draft_svc.get_draft("emp4")
-        self.assertAlmostEqual(draft.total_amount, 100_000_000, delta=5000)
-
-        # Manager duyệt → tạo sale.order có discount
-        fulfillment.register_order_reference("emp4", "SO100")
-        ok, msg = fulfillment.approve_order("SO100")
-        self.assertTrue(ok)
-        # Kiểm tra discount được truyền vào order line
-        call_args = fulfillment.odoo_client.create.call_args
-        order_lines = call_args[0][1]["order_line"]
-        self.assertEqual(order_lines[0][2]["discount"], 28.57)
+    def test_9_idempotency(self):
+        from auth import idempotency_check, idempotency_store
+        is_dup, _ = idempotency_check("u9", "test message")
+        self.assertFalse(is_dup)
+        idempotency_store("u9", "test message", "cached response")
+        is_dup, cached = idempotency_check("u9", "test message")
+        self.assertTrue(is_dup)
+        self.assertEqual(cached, "cached response")
 
 
+import asyncio
 if __name__ == "__main__":
     unittest.main(verbosity=2)

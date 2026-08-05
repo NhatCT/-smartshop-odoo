@@ -1,1 +1,0 @@
-"""SmartShop AI Gateway — Tầng Quan sát (Observability)."""

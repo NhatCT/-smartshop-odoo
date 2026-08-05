@@ -1,21 +1,6 @@
-# Environment variables
-.env
-*.env
-
-# Python cache & build files
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
+.env
 .pytest_cache/
-.coverage
-
-# IDE / System
-.vscode/
-.idea/
-*.swp
-.DS_Store
-
-# Temporary files
-scratch/
-*.log
+.venv/
+*.egg-info/

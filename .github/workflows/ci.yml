@@ -1,13 +1,13 @@
-name: SmartShop Odoo AI Gateway CI
+name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: ["**"]
   pull_request:
-    branches: [ main, master ]
+    branches: [main]
 
 jobs:
-  build-and-test:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,16 +19,17 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install odoo-mcp
 
-      - name: Syntax Compilation Verification
-        run: |
-          python -m py_compile orchestrator/*.py gateway/*.py gateway/services/*.py channels/*.py data_layer/connectors/*.py
+      - name: Compile check
+        run: python -m py_compile odoo.py auth.py ai.py app.py
 
-      - name: Run Pytest Test Suite
+      - name: Run E2E tests
+        run: python -m unittest tests.test_e2e_flow -v
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          ODOO_URL: ${{ secrets.ODOO_URL }}
-        run: |
-          python -m pytest tests/ -v || true
+          ANTHROPIC_API_KEY: test-key
+          ODOO_URL: https://test.odoo.com
+          ODOO_DB: test
+          ODOO_USERNAME: admin@test.com
+          ODOO_PASSWORD: pass
