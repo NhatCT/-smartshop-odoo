@@ -204,6 +204,8 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
     if mcp_session:
         try:
             mcp_tools = await mcp_session.list_tools()
+            print(f"[AI] MCP available tools: {[t.name for t in mcp_tools.tools]}")
+            print(f"[AI] User allowed_tools: {sorted(allowed_tools)}")
             for t in mcp_tools.tools:
                 if t.name in allowed_tools:
                     tools.append({"name": t.name, "description": t.description,
