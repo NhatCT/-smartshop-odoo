@@ -167,6 +167,34 @@ class E2EFlowTest(unittest.TestCase):
         self.assertTrue(is_dup)
         self.assertEqual(cached, "cached response")
 
+    def test_10_register_clear_commands(self):
+        """Test /register và /clear có phản hồi."""
+        from app import handle_system_cmd, message_handler
+        from unittest.mock import patch
+
+        # Test /clear
+        with patch("ai.clear_memory") as mock_clear_mem, \
+             patch("ai.clear_draft") as mock_clear_draft, \
+             patch("app.tg_send", new_callable=AsyncMock) as mock_send:
+            asyncio.run(handle_system_cmd("123", "/clear"))
+            mock_clear_mem.assert_called_once_with("123")
+            mock_clear_draft.assert_called_once_with("123")
+            mock_send.assert_called_once()
+            self.assertIn("xoa", mock_send.call_args[0][1].lower())
+
+        # Test /register thiếu email
+        with patch("app.tg_send", new_callable=AsyncMock) as mock_send:
+            asyncio.run(handle_system_cmd("123", "/register"))
+            mock_send.assert_called_once()
+            self.assertIn("cu phap", mock_send.call_args[0][1].lower())
+
+        # Test /register có email
+        with patch("app.request_otp", return_value=(True, "OTP sent")) as mock_otp, \
+             patch("app.tg_send", new_callable=AsyncMock) as mock_send:
+            asyncio.run(handle_system_cmd("123", "/register test@test.com"))
+            mock_otp.assert_called_once_with("123", "test@test.com")
+            mock_send.assert_called_once()
+
 
 import asyncio
 if __name__ == "__main__":
