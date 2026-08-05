@@ -207,9 +207,11 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
             print(f"[AI] MCP available tools: {[t.name for t in mcp_tools.tools]}")
             print(f"[AI] User allowed_tools: {sorted(allowed_tools)}")
             for t in mcp_tools.tools:
+                print(f"[AI] Checking tool: {t.name} in allowed={t.name in allowed_tools}")
                 if t.name in allowed_tools:
                     tools.append({"name": t.name, "description": t.description,
                                   "input_schema": getattr(t, "input_schema", getattr(t, "inputSchema", {}))})
+            print(f"[AI] Final tools list sent to Claude: {[t['name'] for t in tools]}")
         except Exception as e:
             print(f"[AI] Error listing MCP tools: {e}")
 
