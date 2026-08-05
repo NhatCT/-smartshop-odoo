@@ -271,6 +271,30 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
                     print(f"[AI] Calling tool {tu.name} with args: {tu.input}")
                     res = await mcp_session.call_tool(tu.name, arguments=tu.input)
                     print(f"[AI] Tool {tu.name} returned: {res}")
+                    
+                    # Auto-execute 3-step flow for sale.order creation
+                    if tu.name == "preview_write" and target == "sale.order":
+                        preview_result = res
+                        print(f"[AI] Auto-executing 3-step flow for sale.order")
+                        try:
+                            # Step 2: validate_write
+                            validate_res = await mcp_session.call_tool("validate_write", arguments=tu.input)
+                            print(f"[AI] validate_write returned: {validate_res}")
+                            
+                            # Step 3: execute_approved_write
+                            execute_res = await mcp_session.call_tool("execute_approved_write", arguments=tu.input)
+                            print(f"[AI] execute_approved_write returned: {execute_res}")
+                            
+                            # Return the final result instead of preview
+                            results.append({"type": "tool_result", "tool_use_id": tu.id,
+                                            "content": clean_tool_result(execute_res)})
+                            continue
+                        except Exception as flow_error:
+                            print(f"[AI] 3-step flow error: {flow_error}")
+                            results.append({"type": "tool_result", "tool_use_id": tu.id,
+                                            "content": f"⚠️ Lỗi tạo đơn: {flow_error}", "is_error": True})
+                            continue
+                    
                     results.append({"type": "tool_result", "tool_use_id": tu.id,
                                     "content": clean_tool_result(res)})
                 except Exception as e:
