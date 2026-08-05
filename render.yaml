@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: smartshop-ai-gateway
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt && pip install odoo-mcp
+    startCommand: python app.py
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ODOO_URL
+        sync: false
+      - key: ODOO_DB
+        sync: false
+      - key: ODOO_USERNAME
+        sync: false
+      - key: ODOO_PASSWORD
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: ADMIN_CHAT_ID
+        sync: false
+      - key: N8N_APPROVAL_WEBHOOK_URL
+        sync: false
+      - key: N8N_APPROVAL_WEBHOOK_SECRET
+        sync: false
+      - key: N8N_OTP_WEBHOOK_URL
+        sync: false
+      - key: PORT
+        value: 8000

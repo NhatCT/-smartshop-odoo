@@ -68,10 +68,28 @@ N8N_OTP_WEBHOOK_URL=https://odooworkflow.app.n8n.cloud/webhook/send-otp-email
 ADMIN_CHAT_ID=6553206564
 ```
 
-### 4. Chạy
+### 4. Chạy local
 ```bash
 python app.py
 ```
+
+## 🚢 Deploy lên Render.com
+
+### Cách 1: Dùng render.yaml (recommended)
+1. Push code lên GitHub
+2. Vào [Render Dashboard](https://dashboard.render.com)
+3. New + → Web Service
+4. Connect repo `smartshop-odoo`
+5. Render tự động đọc `render.yaml`
+6. Điền các biến môi trường còn thiếu
+7. Deploy
+
+### Cách 2: Deploy thủ công
+1. New + → Web Service
+2. Runtime: Python 3
+3. Build Command: `pip install -r requirements.txt && pip install odoo-mcp`
+4. Start Command: `python app.py`
+5. Thêm env vars giống `.env`
 
 ## 🧪 Test
 
