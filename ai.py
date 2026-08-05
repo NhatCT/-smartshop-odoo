@@ -247,7 +247,11 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
                                     "is_error": True})
                     continue
                 # Approval Gate: đơn > 20tr
-                if tu.name == "create_sale_order":
+                is_create_sale_order = (
+                    tu.name == "create_sale_order" or
+                    (tu.name == "execute_method" and tu.input.get("model") == "sale.order" and tu.input.get("method_name") == "create")
+                )
+                if is_create_sale_order:
                     draft = get_draft(user_id)
                     if draft.total_amount > 20_000_000:
                         print(f"[APPROVAL GATE] Block: total={draft.total_amount:,.0f} > 20tr")
