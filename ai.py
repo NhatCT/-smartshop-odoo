@@ -264,10 +264,13 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
                         continue
                 print(f"[ACL ALLOWED] {tu.name} -> {target}")
                 try:
+                    print(f"[AI] Calling tool {tu.name} with args: {tu.input}")
                     res = await mcp_session.call_tool(tu.name, arguments=tu.input)
+                    print(f"[AI] Tool {tu.name} returned: {res}")
                     results.append({"type": "tool_result", "tool_use_id": tu.id,
                                     "content": clean_tool_result(res)})
                 except Exception as e:
+                    print(f"[AI] Tool {tu.name} error: {e}")
                     results.append({"type": "tool_result", "tool_use_id": tu.id,
                                     "content": f"⚠️ Lỗi Odoo: {e}", "is_error": True})
             messages.append({"role": "user", "content": results})
