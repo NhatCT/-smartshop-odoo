@@ -262,7 +262,8 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
                         order_name = f"SO-{user_id}-{int(time.time())}"
                         register_order_ref(user_id, order_name)
                         send_approval_request(order_name, draft.total_amount, u.get("full_name", user_id),
-                                              os.getenv("ADMIN_CHAT_ID", "123456789"))
+                                              os.getenv("ADMIN_CHAT_ID", "123456789"),
+                                              telegram_id=user_id)
                         results.append({"type": "tool_result", "tool_use_id": tu.id,
                                         "content": f"⏳ Đơn {draft.total_amount:,.0f} VNĐ (> 20tr) đã chuyển xin duyệt Manager. (order={order_name})"})
                         continue

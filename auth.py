@@ -293,11 +293,12 @@ def verify_approval_token(order_name: str, approver_id: str, token: str) -> bool
 
 
 # ─── Notification (n8n) ───
-def send_approval_request(order_name, total, employee_name, manager_chat_id):
+def send_approval_request(order_name, total, employee_name, manager_chat_id, telegram_id=None):
     url = os.getenv("N8N_APPROVAL_WEBHOOK_URL", "https://odooworkflow.app.n8n.cloud/webhook/approval-webhook")
     try:
         payload = json.dumps({"order_name": order_name, "total_amount": total,
-                              "employee_name": employee_name, "manager_chat_id": manager_chat_id}).encode()
+                              "employee_name": employee_name, "manager_chat_id": manager_chat_id,
+                              "telegram_id": telegram_id}).encode()
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
         urllib.request.urlopen(req, timeout=8)
         return True
