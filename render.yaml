@@ -3,8 +3,11 @@ services:
     name: smartshop-ai-gateway
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements.txt && pip install odoo-mcp
+    region: singapore
+    autoDeploy: yes
+    buildCommand: pip install --no-cache-dir -r requirements.txt && pip install --no-cache-dir odoo-mcp
     startCommand: python app.py
+    healthCheckPath: /health
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
@@ -32,8 +35,10 @@ services:
   - type: cron
     name: smartshop-keepalive
     runtime: python
+    region: singapore
+    plan: starter
     schedule: "*/10 * * * *"
-    buildCommand: pip install requests
+    buildCommand: pip install --no-cache-dir requests
     startCommand: python -c "import os,urllib.request; url=os.getenv('RENDER_EXTERNAL_URL','https://smartshop-ai-gateway.onrender.com').rstrip('/')+'/health'; urllib.request.urlopen(url, timeout=10)"
     envVars:
       - key: RENDER_EXTERNAL_URL

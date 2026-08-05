@@ -31,7 +31,7 @@ from auth import (check_permission, request_otp, verify_otp, rate_limit_check,
 
 # ─── FastAPI ───
 app = FastAPI(title="SmartShop AI Gateway", version="3.0")
-_mcp_wrapper = None
+_mcp_session = None
 WEBHOOK_SECRET = os.getenv("N8N_APPROVAL_WEBHOOK_SECRET", "")
 
 if not WEBHOOK_SECRET:
@@ -40,7 +40,7 @@ if not WEBHOOK_SECRET:
 
 @app.get("/")
 def root():
-    return {"service": "SmartShop AI Gateway v3.0", "status": "online", "mcp_ready": _mcp_wrapper is not None}
+    return {"service": "SmartShop AI Gateway v3.0", "status": "online", "mcp_ready": _mcp_session is not None}
 
 
 @app.get("/health")
@@ -188,26 +188,22 @@ async def handle_system_cmd(user_id, text):
 
 async def message_handler(user_id: str, text: str):
     """Core: Auth → AI → Response."""
-    # Auth
     auth = check_permission(user_id)
     if not auth["allowed"]:
         return auth["reason"]
     user_info = auth["user_info"]
 
-    # AI
-    if _mcp_wrapper is None:
+    if _mcp_session is None:
         return "⚠️ MCP session chua san sang."
-    result = await ai.handle_message(user_id, text, user_info, _mcp_wrapper)
-    return result
+    return await ai.handle_message(user_id, text, user_info, _mcp_session)
 
 
 async def telegram_loop():
-    global _mcp_wrapper
+    global _mcp_session
     print("🤖 [TELEGRAM] Starting bot + MCP session...")
     try:
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
-        from data_layer.mcp import MCPClientWrapper
     except ImportError as e:
         print(f"❌ [TELEGRAM] MCP package not ready: {e}")
         return
@@ -216,7 +212,7 @@ async def telegram_loop():
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            _mcp_wrapper = MCPClientWrapper(session)
+            _mcp_session = session
             print("✅ [MCP] Session ready!")
             offset = 0
             while True:
@@ -270,10 +266,12 @@ if __name__ == "__main__":
     print("=" * 60)
 
     # Start Telegram bot in background
+    print("🔄 Starting Telegram bot thread...")
     tg_thread = threading.Thread(target=lambda: asyncio.run(telegram_loop()), daemon=True)
     tg_thread.start()
+    print("✅ Telegram bot thread started")
 
     # Start FastAPI
     port = int(os.getenv("PORT", 8000))
     print(f"\n🚀 Web Gateway on port {port}...")
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
