@@ -16,7 +16,7 @@ from odoo import OdooClient
 # ─── Config Registry ───
 BINDING_FILE = Path(__file__).parent / "telegram_bindings.json"
 PARAM_BINDINGS = "smartshop.telegram_bindings"
-REQUIRES_ADMIN_APPROVAL = {"nhatlovely2017@gmail.com"}
+REQUIRES_ADMIN_APPROVAL = set()
 
 _odoo = OdooClient()
 
