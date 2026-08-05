@@ -1,0 +1,85 @@
+{
+  "name": "SmartShop Approval Flow (A) — Nhan & Gui Telegram",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "approval-webhook",
+        "responseMode": "onReceived",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "id": "webhook-listener",
+      "name": "Webhook Listener",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "smartshop-approval-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lấy dữ liệu từ Webhook\nconst data = $input.first().json;\n\nconst orderName = data.order_name;\nconst total = Number(data.total_amount || 0);\nconst employee = data.employee_name || 'N/A';\nconst managerChatId = data.manager_chat_id || '6553206564';\nconst userId = data.telegram_id || '';  // user_id của nhân viên\n\n// Format tiền VNĐ\nconst formattedTotal = total.toLocaleString('vi-VN');\n\n// Chuẩn bị nội dung tin nhắn\nconst messageText = `📋 *YÊU CẦU PHÊ DUYỆT ĐƠN HÀNG*\\n\\n`\n  + `• Mã đơn: \\`${orderName}\\`\\n`\n  + `• Nhân viên: ${employee}\\n`\n  + `• Tổng tiền: *${formattedTotal} VNĐ*\\n\\n`\n  + `Vui lòng kiểm tra và phê duyệt:`;\n\n// ⚠️ NHÚNG telegram_id VÀO callback_data (giới hạn 64 ký tự)\n// Format: <action>:<order_name>:<telegram_id>\n// Ví dụ:  approve:SO-emp10-1785921922:emp10  = 33 ký tự — OK!\nconst approveCb = `approve:${orderName}:${userId}`;\nconst rejectCb = `reject:${orderName}:${userId}`;\n\nreturn [{\n  json: {\n    chat_id: managerChatId,\n    text: messageText,\n    reply_markup: {\n      inline_keyboard: [[\n        { text: '✅ Duyệt', callback_data: approveCb },\n        { text: '❌ Từ chối', callback_data: rejectCb }\n      ]]\n    }\n  }\n}];"
+      },
+      "id": "code-prepare",
+      "name": "Code - Chuan bi Telegram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "reply_markup": "={{ JSON.stringify($json.reply_markup) }}"
+        }
+      },
+      "id": "telegram-send",
+      "name": "Telegram - Gui cho Manager",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [440, 0],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_YOUR_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Listener": {
+      "main": [
+        [
+          {
+            "node": "Code - Chuan bi Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Chuan bi Telegram": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Gui cho Manager",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "pinData": {},
+  "versionId": "smartshop-approval-flow-a",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

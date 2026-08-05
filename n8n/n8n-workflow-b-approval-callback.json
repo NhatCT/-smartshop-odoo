@@ -1,0 +1,117 @@
+{
+  "name": "SmartShop Approval Callback (B) — Xu ly Approve/Reject",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["callback_query"],
+        "additionalFields": {}
+      },
+      "id": "telegram-trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 0],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_YOUR_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lấy dữ liệu từ Telegram callback\nconst cb = $input.first().json.callback_query || {};\nconst callbackData = cb.data || '';\n\n// Parse callback_data format: \"<action>:<order_name>:<telegram_id>\"\n// Ví dụ: \"approve:SO-emp10-1785921922:emp10\"\nconst parts = callbackData.split(':');\nconst action = parts[0];                    // \"approve\" hoặc \"reject\"\nconst telegramId = parts.pop();             // \"emp10\" — user_id của NHÂN VIÊN\nconst orderName = parts.slice(1).join(':'); // \"SO-emp10-1785921922\"\n\nconst chatId = String(cb.message?.chat?.id || '');\nconst fromId = String(cb.from?.id || '');\nconst messageId = cb.message?.message_id;\n\nreturn [{\n  json: {\n    action: action,\n    order_name: orderName,\n    telegram_id: telegramId,   // ← user_id của NHÂN VIÊN (emp10)\n    chat_id: chatId,\n    from_id: fromId,           // ← ID của Manager bấm nút (chỉ để tham khảo)\n    message_id: messageId,\n    callback_query_id: cb.id\n  }\n}];"
+      },
+      "id": "code-parse",
+      "name": "Code - Parse Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lấy secret — giống N8N_APPROVAL_WEBHOOK_SECRET trong .env\nconst secret = $env.APPROVAL_WEBHOOK_SECRET || 'smartshop-approval-2026';\n\n// Lấy dữ liệu từ node trước\nconst data = $input.first().json;\nconst action = data.action;\nconst orderName = data.order_name;\nconst telegramId = data.telegram_id;\n\n// Tạo payload — THỨ TỰ KEY PHẢI GIỮ NGUYÊN\n// KHỚP với app.py: data.get(\"action\"), data.get(\"order_name\"), data.get(\"telegram_id\")\nconst body = JSON.stringify({\n  action: action,\n  order_name: orderName,\n  telegram_id: telegramId\n});\n\n// Tạo HMAC-SHA256 signature — KHỚP với app.py:_verify_sig\nconst crypto = require('crypto');\nconst signature = crypto\n  .createHmac('sha256', secret)\n  .update(body)\n  .digest('hex');\n\nreturn [{\n  json: {\n    ...data,\n    body: body,\n    signature: signature\n  }\n}];"
+      },
+      "id": "code-hmac",
+      "name": "Code - Tao HMAC Signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://smartshop-ai-gateway.onrender.com/api/webhook/approval",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Webhook-Signature",
+              "value": "={{ $json.signature }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "http-request",
+      "name": "HTTP Request - Goi SmartShop",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 0]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Code - Parse Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Parse Callback": {
+      "main": [
+        [
+          {
+            "node": "Code - Tao HMAC Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Tao HMAC Signature": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request - Goi SmartShop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "pinData": {},
+  "versionId": "smartshop-approval-callback-b",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

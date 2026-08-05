@@ -9,13 +9,15 @@ import sys
 import threading
 import urllib.request
 
-# Load .env
+# Load .env — chỉ set nếu chưa tồn tại (không override env đã có sẵn)
 if os.path.exists(".env"):
     for line in open(".env", encoding="utf-8"):
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             k, v = line.split("=", 1)
-            os.environ[k.strip()] = v.strip()
+            k = k.strip()
+            if k not in os.environ:
+                os.environ[k] = v.strip()
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -32,10 +34,11 @@ from auth import (check_permission, request_otp, verify_otp, rate_limit_check,
 # ─── FastAPI ───
 app = FastAPI(title="SmartShop AI Gateway", version="3.0")
 _mcp_session = None
-WEBHOOK_SECRET = os.getenv("N8N_APPROVAL_WEBHOOK_SECRET", "")
 
-if not WEBHOOK_SECRET:
-    print("[WEBHOOK] N8N_APPROVAL_WEBHOOK_SECRET chua cau hinh — approval callback se bi tu choi.")
+
+def _get_webhook_secret() -> str:
+    """Đọc secret mỗi lần gọi — hỗ trợ test override env var."""
+    return os.getenv("N8N_APPROVAL_WEBHOOK_SECRET", "")
 
 
 @app.get("/")
@@ -49,9 +52,10 @@ def health():
 
 
 def _verify_sig(payload: bytes, sig: str) -> bool:
-    if not WEBHOOK_SECRET or not sig:
+    secret = _get_webhook_secret()
+    if not secret or not sig:
         return False
-    expected = hmac.new(WEBHOOK_SECRET.encode(), payload, hashlib.sha256).hexdigest()
+    expected = hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
     return hmac.compare_digest(sig, expected)
 
 
