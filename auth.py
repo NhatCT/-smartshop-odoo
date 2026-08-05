@@ -64,7 +64,8 @@ def fetch_user_context(email: str) -> dict | None:
     try:
         users = _odoo.search_read("res.users", ["|", ["login", "=ilike", clean], ["email", "=ilike", clean]],
                                   ["id", "name", "login", "active", "company_id", "all_group_ids"], 1)
-    except Exception:
+    except Exception as e:
+        print(f"[ODOO SEARCH ERROR] fetch_user_context: {e}")
         return None
     if not users:
         return None
@@ -149,9 +150,11 @@ def request_otp(telegram_id, email) -> tuple[bool, str]:
     email = email.lower().strip()
     try:
         users = _odoo.search_read("res.users", ["|", ["login", "=ilike", email], ["email", "=ilike", email]],
-                                  ["id", "name", "login", "active"], 1)
-    except Exception:
-        users = []
+                                  ["id", "name", "login", "active", "email"], 1)
+        print(f"[ODOO SEARCH] request_otp email={email} results={len(users)} users={[u.get('login') or u.get('email') for u in users]}")
+    except Exception as e:
+        print(f"[ODOO SEARCH ERROR] request_otp: {e}")
+        return False, f"❌ Lỗi kết nối Odoo: {e}"
     if not users:
         return False, f"❌ Email '{email}' không tồn tại trong Odoo."
     if not users[0].get("active", True):
