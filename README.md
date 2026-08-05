@@ -2,19 +2,30 @@
 
 Bot AI điều hành Odoo 19 qua Telegram — **đơn giản, bảo mật, dễ bảo trì**.
 
-## 🏗️ Kiến trúc 5 file
+## 🏗️ Kiến trúc
 
 ```
 smartshop-odoo/
-├── app.py              ← FastAPI + Telegram bot + Webhook (main entry)
-├── ai.py               ← Claude + tools + ACL + approval gate + draft + memory
-├── auth.py             ← OTP + permission + rate limit + idempotency + config
-├── odoo.py             ← OdooClient (thread-safe, auto-reconnect)
+├── app.py                    ← FastAPI + Telegram bot + Webhook (main entry)
+├── ai.py                     ← Claude AI + tools + ACL + approval gate + draft + memory
+├── auth.py                   ← OTP + permission + rate limit + idempotency + config
+├── odoo.py                   ← OdooClient (thread-safe, auto-reconnect)
+├── docs/
+│   ├── LEAD-GUIDE.md         ← Hướng dẫn sử dụng cho Lead/Quản lý
+│   ├── n8n-approval-webhook-setup.md      ← Cấu hình secret webhook n8n
+│   └── n8n-approval-workflow-full-guide.md ← Xây dựng workflow n8n từ đầu
+├── n8n/
+│   ├── n8n-workflow-a-approval-flow.json      ← Workflow A (Nhận + Gửi TG)
+│   ├── n8n-workflow-b-approval-callback.json  ← Workflow B (Callback + Gọi lại)
+│   └── README-IMPORT.md                       ← Hướng dẫn import vào n8n
 ├── tests/
-│   └── test_e2e_flow.py ← 9 test E2E (0 token API)
-├── requirements.txt    ← 4 packages
+│   ├── test_approval_workflow.py  ← 12 test approval workflow
+│   ├── test_e2e_flow.py           ← 10 test E2E (0 token API)
+│   └── test_telegram_live.py      ← Kiểm tra cấu hình trước khi test live
+├── requirements.txt    ← Dependencies
 ├── Dockerfile          ← python:3.11-slim + odoo-mcp
 ├── runtime.txt         ← python-3.11.9
+├── render.yaml         ← Deploy config Render (web + cron keepalive)
 └── .env                ← Cấu hình môi trường
 ```
 
@@ -29,6 +40,7 @@ smartshop-odoo/
 - 🚦 **Rate Limit**: 30 tin/phút/user
 - 🔁 **Idempotency**: Chống trùng lặp xử lý
 - 💰 **Chiết khấu**: Hỗ trợ discount % khi tạo đơn
+- 🔄 **n8n Approval Workflow**: 2 workflow JSON sẵn sàng import
 
 ## 🚀 Cài đặt
 
@@ -91,11 +103,40 @@ python app.py
 4. Start Command: `python app.py`
 5. Thêm env vars giống `.env`
 
+## 🔄 Cấu hình n8n Approval Workflow
+
+### Import 2 workflow JSON
+
+Thư mục `n8n/` chứa 2 workflow sẵn sàng import:
+
+| File | Workflow | Mô tả |
+|---|---|---|
+| `n8n-workflow-a-approval-flow.json` | **Workflow A** | Nhận request từ SmartShop → gửi Telegram cho Manager kèm nút ✅/❌ |
+| `n8n-workflow-b-approval-callback.json` | **Workflow B** | Lắng nghe Manager bấm nút → gọi lại SmartShop tạo/từ chối đơn |
+
+**Cách import:**
+1. Vào n8n → **Workflows** → **Import from File**
+2. Chọn file JSON → Import
+3. Liên kết **Credential Telegram** (dùng `TELEGRAM_BOT_TOKEN`)
+4. Kiểm tra **Secret** khớp `N8N_APPROVAL_WEBHOOK_SECRET`
+5. Bật **Active** cho cả 2 workflow
+
+> 📖 Chi tiết: xem `n8n/README-IMPORT.md` và `docs/n8n-approval-workflow-full-guide.md`
+
 ## 🧪 Test
 
 ```bash
-# Chạy 9 test E2E (0 token API)
-python -m unittest tests.test_e2e_flow -v
+# Chạy toàn bộ test (22 tests)
+python -m pytest tests/ -v
+
+# Chạy test approval workflow riêng
+python -m pytest tests/test_approval_workflow.py -v
+
+# Chạy test E2E riêng
+python -m pytest tests/test_e2e_flow.py -v
+
+# Kiểm tra cấu hình trước khi test live
+python tests/test_telegram_live.py
 
 # Compile check
 python -m py_compile odoo.py auth.py ai.py app.py
@@ -119,12 +160,18 @@ giá iphone 15 pro max
 Tạo báo giá cho khách hàng Alice 2 cái iPhone 15
 ```
 
-### 4. Xem quyền của mình
+### 4. Tạo đơn lớn (> 20tr) — Approval
+```
+Tạo đơn 30tr cho khách Alice 5 Laptop
+```
+→ Manager nhận tin nhắn duyệt → bấm ✅ Duyệt / ❌ Từ chối
+
+### 5. Xem quyền của mình
 ```
 /my_role
 ```
 
-### 5. Xóa bộ nhớ hội thoại
+### 6. Xóa bộ nhớ hội thoại
 ```
 /clear
 ```
@@ -153,14 +200,40 @@ MCP → Odoo (thực thi tool)
 Trả lời 3 mục (Kết luận + Dữ liệu + Bước tiếp theo)
 ```
 
+### Luồng Approval (> 20tr)
+
+```
+Nhân viên tạo đơn > 20tr
+    ↓
+AI chặn đơn + gửi yêu cầu duyệt (kèm telegram_id)
+    ↓
+n8n Workflow A: nhận request → gửi Telegram cho Manager
+    ↓
+Manager bấm nút ✅ Duyệt / ❌ Từ chối
+    ↓
+n8n Workflow B: nhận callback → tạo HMAC signature → gọi lại SmartShop
+    ↓
+SmartShop verify HMAC → tạo/từ chối đơn trên Odoo
+```
+
 ## 🛠️ Tech Stack
 
 - **AI**: Claude Haiku 4.5 (Anthropic)
 - **Backend**: FastAPI + Uvicorn
 - **Database**: Odoo 19 SaaS (OdooRPC)
 - **Bot**: Telegram Bot API
-- **Automation**: n8n (approval workflow)
+- **Automation**: n8n (approval workflow + OTP email)
+- **Deploy**: Render.com (web + cron keepalive)
 - **CI/CD**: GitHub Actions
+
+## 📚 Tài liệu
+
+| File | Nội dung |
+|---|---|
+| `docs/LEAD-GUIDE.md` | Hướng dẫn sử dụng cho Lead/Quản lý (link, tài khoản, test) |
+| `docs/n8n-approval-webhook-setup.md` | Cấu hình secret webhook n8n |
+| `docs/n8n-approval-workflow-full-guide.md` | Xây dựng workflow n8n từ đầu |
+| `n8n/README-IMPORT.md` | Hướng dẫn import 2 workflow JSON |
 
 ## 📝 License
 
