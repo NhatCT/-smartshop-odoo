@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hướng Dẫn Sử Dụng — SmartShop AI Gateway</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #334155;
+            --text-heading: #0f172a;
+            --border-color: #e2e8f0;
+            --code-bg: #f1f5f9;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: var(--text-main);
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: var(--card-bg);
+            padding: 2.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        h1 {
+            color: var(--text-heading);
+            font-size: 2.25rem;
+            margin-top: 0;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 0.75rem;
+        }
+
+        h2 {
+            color: var(--text-heading);
+            font-size: 1.5rem;
+            margin-top: 2rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.5rem;
+        }
+
+        h3 {
+            color: var(--text-heading);
+            font-size: 1.2rem;
+            margin-top: 1.5rem;
+        }
+
+        p, li {
+            font-size: 1rem;
+        }
+
+        a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        blockquote {
+            margin: 1.5rem 0;
+            padding: 1rem 1.25rem;
+            background-color: #eff6ff;
+            border-left: 4px solid var(--primary);
+            color: #1e3a8a;
+            border-radius: 0 6px 6px 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+        }
+
+        th, td {
+            border: 1px solid var(--border-color);
+            padding: 0.75rem 1rem;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f8fafc;
+            color: var(--text-heading);
+            font-weight: 600;
+        }
+
+        tr:nth-child(even) {
+            background-color: #fcfcfc;
+        }
+
+        code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            background-color: var(--code-bg);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            color: #d97706;
+        }
+
+        pre {
+            background-color: #0f172a;
+            color: #e2e8f0;
+            padding: 1.25rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+
+        pre code {
+            background-color: transparent;
+            color: inherit;
+            padding: 0;
+        }
+
+        .footer {
+            margin-top: 3rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+            font-size: 0.875rem;
+            color: #64748b;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📘 HƯỚNG DẪN SỬ DỤNG — SmartShop AI Gateway</h1>
+
+    <blockquote>
+        Tài liệu dành cho <strong>Lead/Quản lý</strong> — hướng dẫn truy cập, test và sử dụng hệ thống AI điều hành Odoo qua Telegram.
+    </blockquote>
+
+    <h2>🔗 Link truy cập nhanh</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Hệ thống</th>
+                <th>Link</th>
+                <th>Mô tả</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Telegram Bot</strong></td>
+                <td><a href="https://t.me/SmartShopAIBot" target="_blank">t.me/SmartShopAIBot</a></td>
+                <td>Bot AI chính — dùng để tra cứu, tạo đơn, duyệt đơn</td>
+            </tr>
+            <tr>
+                <td><strong>Odoo 19</strong></td>
+                <td><a href="https://smartshop-odoo.odoo.com" target="_blank">smartshop-odoo.odoo.com</a></td>
+                <td>Hệ thống ERP quản lý sản phẩm, đơn hàng, tồn kho</td>
+            </tr>
+            <tr>
+                <td><strong>n8n Cloud</strong></td>
+                <td><a href="https://odooworkflow.app.n8n.cloud" target="_blank">odooworkflow.app.n8n.cloud</a></td>
+                <td>Workflow tự động hóa (approval, OTP email)</td>
+            </tr>
+            <tr>
+                <td><strong>Render (Gateway)</strong></td>
+                <td><a href="https://smartshop-ai-gateway.onrender.com" target="_blank">smartshop-ai-gateway.onrender.com</a></td>
+                <td>Server chạy AI Gateway (FastAPI + Telegram bot)</td>
+            </tr>
+            <tr>
+                <td><strong>GitHub Repo</strong></td>
+                <td><a href="https://github.com/NhatCT/-smartshop-odoo" target="_blank">github.com/NhatCT/-smartshop-odoo</a></td>
+                <td>Mã nguồn dự án</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>🤖 Telegram Bot — Cách sử dụng</h2>
+
+    <h3>Bước 1: Mở bot</h3>
+    <p>Mở Telegram → tìm <strong>@SmartShopAIBot</strong> (hoặc bấm link <a href="https://t.me/SmartShopAIBot" target="_blank">t.me/SmartShopAIBot</a>) → bấm <strong>Start</strong></p>
+
+    <h3>Bước 2: Đăng ký tài khoản (chỉ 1 lần)</h3>
+    <p>Gõ lệnh:</p>
+    <pre><code>/register email@company.com</code></pre>
+    <p>→ Hệ thống gửi mã OTP qua email → gõ:</p>
+    <pre><code>/verify &lt;MÃ_OTP_6_SỐ&gt;</code></pre>
+    <p>→ ✅ Xác thực thành công, bot báo vai trò của bạn.</p>
+
+    <h3>Bước 3: Các lệnh cơ bản</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Lệnh</th>
+                <th>Chức năng</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>/start</code> hoặc <code>/help</code></td>
+                <td>Xem hướng dẫn</td>
+            </tr>
+            <tr>
+                <td><code>/register email@company.com</code></td>
+                <td>Đăng ký liên kết Telegram ↔ Odoo</td>
+            </tr>
+            <tr>
+                <td><code>/verify &lt;MÃ_OTP&gt;</code></td>
+                <td>Xác thực OTP</td>
+            </tr>
+            <tr>
+                <td><code>/my_role</code></td>
+                <td>Xem quyền hạn của mình</td>
+            </tr>
+            <tr>
+                <td><code>/clear</code></td>
+                <td>Xóa bộ nhớ hội thoại</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>Bước 4: Câu lệnh tiếng Việt tự nhiên</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Bạn gõ</th>
+                <th>Bot làm gì</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>giá iphone 15 pro max</code></td>
+                <td>Tra cứu giá sản phẩm</td>
+            </tr>
+            <tr>
+                <td><code>kiểm tra tồn kho laptop</code></td>
+                <td>Xem số lượng tồn kho</td>
+            </tr>
+            <tr>
+                <td><code>Tạo báo giá cho khách Alice 2 cái iPhone 15</code></td>
+                <td>Tạo đơn hàng (draft)</td>
+            </tr>
+            <tr>
+                <td><code>Xem công nợ của khách ABC</code></td>
+                <td>Tra cứu công nợ</td>
+            </tr>
+            <tr>
+                <td><code>Tạo đơn 30tr cho khách Alice 5 Laptop</code></td>
+                <td>Tạo đơn &gt; 20tr → <strong>chuyển Manager duyệt</strong></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>⛔ Luồng Duyệt Đơn (Approval Workflow)</h2>
+    <p>Khi nhân viên tạo đơn <strong>&gt; 20.000.000 VNĐ</strong>, hệ thống tự động:</p>
+    <pre><code>Nhân viên tạo đơn &gt; 20tr
+        ↓
+AI chặn đơn + gửi yêu cầu duyệt
+        ↓
+n8n gửi tin nhắn Telegram cho Manager
+        ↓
+Manager bấm nút ✅ Duyệt / ❌ Từ chối
+        ↓
+SmartShop tạo/từ chối đơn trên Odoo</code></pre>
+    <p><strong>Manager (chat_id <code>6553206564</code>)</strong> sẽ nhận tin nhắn có 2 nút bấm:</p>
+    <ul>
+        <li><strong>✅ Duyệt</strong> → tạo Sale Order trên Odoo</li>
+        <li><strong>❌ Từ chối</strong> → xóa đơn draft</li>
+    </ul>
+
+    <h2>🧪 Test nhanh hệ thống</h2>
+
+    <h3>Test 1: Bot phản hồi</h3>
+    <p>Mở Telegram → gõ:</p>
+    <pre><code>/start</code></pre>
+    <p>→ Bot trả lời hướng dẫn.</p>
+
+    <h3>Test 2: Tra cứu sản phẩm</h3>
+    <p>Gõ:</p>
+    <pre><code>giá iphone 15 pro max</code></pre>
+    <p>→ Bot trả về giá + tồn kho.</p>
+
+    <h3>Test 3: Tạo đơn nhỏ (&lt; 20tr)</h3>
+    <p>Gõ:</p>
+    <pre><code>Tạo báo giá cho khách Alice 2 cái iPhone 15</code></pre>
+    <p>→ Bot tạo đơn draft trên Odoo.</p>
+
+    <h3>Test 4: Tạo đơn lớn (&gt; 20tr) — Test Approval</h3>
+    <p>Gõ:</p>
+    <pre><code>Tạo đơn 30tr cho khách Alice 5 Laptop</code></pre>
+    <p>→ Bot chặn đơn → Manager nhận tin nhắn duyệt → bấm ✅ Duyệt → đơn tạo trên Odoo.</p>
+
+    <h2>🔑 Tài khoản & Thông tin</h2>
+
+    <h3>Odoo 19</h3>
+    <table>
+        <tr><th>Thông tin</th><th>Giá trị</th></tr>
+        <tr><td>URL</td><td><code>https://smartshop-odoo.odoo.com</code></td></tr>
+        <tr><td>Database</td><td><code>smartshop-odoo</code></td></tr>
+        <tr><td>Username</td><td><code>nhatlovely2017@gmail.com</code></td></tr>
+        <tr><td>Password</td><td><code>Nhat#1908</code></td></tr>
+    </table>
+
+    <h3>Telegram</h3>
+    <table>
+        <tr><th>Thông tin</th><th>Giá trị</th></tr>
+        <tr><td>Bot Token</td><td><code>8835716387:AAGxnOylWpuvJP0r43RPMqM_txbagLkds5I</code></td></tr>
+        <tr><td>Bot Link</td><td><a href="https://t.me/SmartShopAIBot" target="_blank">https://t.me/SmartShopAIBot</a></td></tr>
+        <tr><td>Manager Chat ID</td><td><code>6553206564</code></td></tr>
+    </table>
+
+    <h3>n8n</h3>
+    <table>
+        <tr><th>Thông tin</th><th>Giá trị</th></tr>
+        <tr><td>URL</td><td><a href="https://odooworkflow.app.n8n.cloud" target="_blank">https://odooworkflow.app.n8n.cloud</a></td></tr>
+        <tr><td>Approval Webhook</td><td><code>https://odooworkflow.app.n8n.cloud/webhook/approval-webhook</code></td></tr>
+        <tr><td>OTP Webhook</td><td><code>https://odooworkflow.app.n8n.cloud/webhook/send-otp-email</code></td></tr>
+        <tr><td>Webhook Secret</td><td><code>smartshop-approval-2026</code></td></tr>
+    </table>
+
+    <h3>Render</h3>
+    <table>
+        <tr><th>Thông tin</th><th>Giá trị</th></tr>
+        <tr><td>URL</td><td><a href="https://smartshop-ai-gateway.onrender.com" target="_blank">https://smartshop-ai-gateway.onrender.com</a></td></tr>
+        <tr><td>Health Check</td><td><code>https://smartshop-ai-gateway.onrender.com/health</code></td></tr>
+    </table>
+
+    <h3>GitHub</h3>
+    <table>
+        <tr><th>Thông tin</th><th>Giá trị</th></tr>
+        <tr><td>Repo</td><td><a href="https://github.com/NhatCT/-smartshop-odoo.git" target="_blank">https://github.com/NhatCT/-smartshop-odoo.git</a></td></tr>
+        <tr><td>Branch</td><td><code>main</code></td></tr>
+    </table>
+
+    <h2>🛠️ Kiến trúc hệ thống</h2>
+    <pre><code>┌─────────────────────────────────────────────────────┐
+│                    TELEGRAM USER                    │
+│  (Nhân viên gõ lệnh / Manager bấm nút duyệt)        │
+└──────────────────────┬──────────────────────────────┘
+                       │
+┌──────────────────────▼──────────────────────────────┐
+│              SMARTShop AI GATEWAY (Render)          │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │
+│  │ FastAPI  │  │ Claude AI│  │ Approval Gate    │   │
+│  │ Webhook  │  │ (tool    │  │ (&gt;20tr → duyệt)  │   │
+│  │ + Bot    │  │  loop)   │  │                  │   │
+│  └────┬─────┘  └────┬─────┘  └────────┬─────────┘   │
+│       │             │                 │             │
+└───────┼─────────────┼─────────────────┼─────────────┘
+        │             │                 │
+┌───────▼─────┐ ┌─────▼──────┐ ┌───────▼──────────┐
+│  Odoo 19    │ │  n8n Cloud │ │  Telegram Bot    │
+│  (ERP)      │ │ (workflow) │ │  (gửi tin nhắn)  │
+└─────────────┘ └────────────┘ └──────────────────┘</code></pre>
+
+    <h2>📂 Cấu trúc mã nguồn</h2>
+    <pre><code>smartshop-odoo/
+├── app.py                  ← FastAPI + Telegram bot + Webhook (main)
+├── ai.py                   ← Claude AI + tools + ACL + approval gate
+├── auth.py                 ← OTP + permission + rate limit + idempotency
+├── odoo.py                 ← OdooClient (thread-safe)
+├── docs/
+│   ├── LEAD-GUIDE.md         ← File này
+│   ├── n8n-approval-webhook-setup.md
+│   └── n8n-approval-workflow-full-guide.md
+├── n8n/
+│   ├── n8n-workflow-a-approval-flow.json
+│   ├── n8n-workflow-b-approval-callback.json
+│   └── README-IMPORT.md
+├── tests/
+│   ├── test_approval_workflow.py  ← 12 test approval
+│   ├── test_e2e_flow.py          ← 10 test E2E
+│   └── test_telegram_live.py      ← test cấu hình
+├── requirements.txt
+├── Dockerfile
+├── render.yaml
+└── .env</code></pre>
+
+    <h2>🧪 Chạy test</h2>
+    <pre><code># Chạy toàn bộ test (22 tests)
+python -m pytest tests/ -v
+
+# Kiểm tra cấu hình trước khi test live
+python tests/test_telegram_live.py</code></pre>
+
+    <div class="footer">
+        <p>Liên hệ: <strong>Nguyen Thanh Nhat</strong> — <a href="https://github.com/NhatCT" target="_blank">@NhatCT</a></p>
+    </div>
+</div>
+
+</body>
+</html>

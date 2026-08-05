@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "updates": ["callback_query"],
+        "updates": ["message", "callback_query"],
         "additionalFields": {}
       },
       "id": "telegram-trigger",

@@ -18,6 +18,7 @@ def get_client():
 
 MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
 MAX_TURNS = 2
+DISABLE_APPROVAL_GATE = os.getenv("DISABLE_APPROVAL_GATE", "0").lower() in ("1", "true", "yes")
 
 # ─── Draft Order ───
 class DraftItem:
@@ -257,7 +258,7 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
                 )
                 if is_create_sale_order:
                     draft = get_draft(user_id)
-                    if draft.total_amount > 20_000_000:
+                    if draft.total_amount > 20_000_000 and not DISABLE_APPROVAL_GATE:
                         print(f"[APPROVAL GATE] Block: total={draft.total_amount:,.0f} > 20tr")
                         order_name = f"SO-{user_id}-{int(time.time())}"
                         register_order_ref(user_id, order_name)

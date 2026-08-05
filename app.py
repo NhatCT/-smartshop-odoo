@@ -80,7 +80,8 @@ async def approval_callback(request: Request):
 # ─── Telegram Bot ───
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}"
-ADMIN_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "6553206564")
+# Prefer ADMIN_CHAT_ID, but support legacy TELEGRAM_CHAT_ID
+ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", os.getenv("TELEGRAM_CHAT_ID", "6553206564"))
 SYSTEM_CMDS = {"/start", "/register", "/verify", "/my_role", "/clear", "/reset", "/help"}
 
 
@@ -206,6 +207,15 @@ async def telegram_loop():
     global _mcp_session
     print("🤖 [TELEGRAM] Starting bot + MCP session...")
     try:
+        # Ensure no webhook is set on Telegram side to avoid HTTP 409 Conflict when using getUpdates
+        try:
+            del_req = urllib.request.Request(f"{BASE_URL}/deleteWebhook", data=json.dumps({}).encode(),
+                                             headers={"Content-Type": "application/json"})
+            await asyncio.to_thread(lambda: urllib.request.urlopen(del_req, timeout=8).read())
+            print("[TG] Called deleteWebhook to allow polling (getUpdates).")
+        except Exception as e:
+            print(f"[TG] deleteWebhook failed (continuing): {e}")
+
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
     except ImportError as e:
@@ -260,6 +270,19 @@ async def telegram_loop():
                     await asyncio.sleep(1)
                 except Exception as e:
                     print(f"⚠️ [POLL ERROR]: {e}")
+                    # If Telegram returns HTTP 409 Conflict (webhook active), try deleting webhook and continue
+                    try:
+                        if "409" in str(e) or "Conflict" in str(e):
+                            try:
+                                del_req = urllib.request.Request(f"{BASE_URL}/deleteWebhook",
+                                                                 data=json.dumps({}).encode(),
+                                                                 headers={"Content-Type": "application/json"})
+                                await asyncio.to_thread(lambda: urllib.request.urlopen(del_req, timeout=8).read())
+                                print("[TG] deleteWebhook called after 409 Conflict.")
+                            except Exception as e2:
+                                print(f"[TG] deleteWebhook retry failed: {e2}")
+                    except Exception:
+                        pass
                     await asyncio.sleep(2)
 
 
