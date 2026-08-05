@@ -93,7 +93,8 @@ def fetch_user_context(email: str) -> dict | None:
     tools = {"search_records", "list_products"}
     models = {"product.template", "product.product"}
     if is_sales or is_sales_mgr or is_admin:
-        tools.update(["create_sale_order", "create_record", "update_record", "get_sale_order", "execute_method"])
+        tools.update(["create_sale_order", "create_record", "update_record", "get_sale_order", "execute_method",
+                      "preview_write", "validate_write", "execute_approved_write"])
         models.update(["sale.order", "sale.order.line", "res.partner"])
     if is_inv or is_inv_mgr or is_admin:
         tools.update(["get_stock_quant"])
