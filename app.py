@@ -89,10 +89,15 @@ async def tg_send(user_id, text, parse_mode="Markdown"):
         req = urllib.request.Request(url, data=json.dumps(payload).encode(),
                                      headers={"Content-Type": "application/json"})
         await asyncio.to_thread(lambda: urllib.request.urlopen(req, timeout=8).read())
+        print(f"[TG] Sent to {user_id}: {text[:80]}...")
         return True
-    except Exception:
+    except Exception as e:
+        print(f"[TG] FAILED to {user_id}: {e}")
         if parse_mode:
-            return await tg_send(user_id, text, parse_mode=None)
+            try:
+                return await tg_send(user_id, text, parse_mode=None)
+            except Exception as e2:
+                print(f"[TG] FAILED retry to {user_id}: {e2}")
         return False
 
 
@@ -133,6 +138,7 @@ async def handle_callback(callback, message_handler):
 
 async def handle_system_cmd(user_id, text):
     lower = text.lower()
+    print(f"[CMD] user={user_id} cmd={lower}")
     if lower in ("/start", "/help"):
         await tg_send(user_id, (
             "👋 SMARTSHOP AI ASSISTANT\n\n"
@@ -147,6 +153,7 @@ async def handle_system_cmd(user_id, text):
             await tg_send(user_id, "Cu phap: /register email@company.com", parse_mode=None)
             return
         ok, msg = request_otp(user_id, parts[1])
+        print(f"[CMD] /register result={ok} msg={msg}")
         await tg_send(user_id, msg.replace("`", "").replace("**", ""), parse_mode=None)
         return
     if lower.startswith("/verify"):
@@ -155,6 +162,7 @@ async def handle_system_cmd(user_id, text):
             await tg_send(user_id, "Cu phap: /verify MA_OTP", parse_mode=None)
             return
         ok, msg = verify_otp(user_id, parts[1])
+        print(f"[CMD] /verify result={ok} msg={msg}")
         await tg_send(user_id, msg.replace("`", "").replace("**", ""), parse_mode=None)
         return
     if lower == "/my_role":
