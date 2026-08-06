@@ -75,9 +75,54 @@ Mặc định:
 
 ## Xử lý sự cố
 
+### Lỗi: "Error fetching options from Odoo"
+
+Đây là lỗi phổ biến khi Odoo node không kết nối được. Cách khắc phục theo thứ tự:
+
+**1. Kiểm tra Credential Odoo đã gán đúng chưa**
+- Mở node Odoo → kiểm tra section "Credential to connect with"
+- Nếu thấy "REPLACE_WITH_YOUR_ODOO_CREDENTIAL_ID" → credential chưa được gán
+- Cách sửa: Click vào credential dropdown → chọn credential đã tạo
+
+**2. Kiểm tra thông tin Odoo Credential**
+Vào n8n → Settings → Credentials → mở Odoo credential đã tạo, kiểm tra:
+
+| Field | Phải là |
+|---|---|
+| Site URL | `https://smartshop-odoo.odoo.com` (KHÔNG có `/xmlrpc` hay `/web`) |
+| Port | Để trống (mặc định 443 cho HTTPS) |
+| Database | `smartshop-odoo` |
+| Username | `nhatlovely2017@gmail.com` |
+| Password | Mật khẩu `.env` |
+
+> ⚠️ **Lỗi thường gặp:** Thêm `/xmlrpc/2/object` vào URL → sẽ bị lỗi. Chỉ để domain gốc.
+
+**3. Kiểm tra Odoo có bật API không**
+- Vào Odoo → Settings → General Settings → kéo xuống phần **API**
+- Bật **Allow API access** nếu chưa bật
+- Kiểm tra user `nhatlovely2017@gmail.com` có quyền access API không
+
+**4. Test kết nối từ browser**
+Mở link này để kiểm tra Odoo có phản hồi không:
+```
+https://smartshop-odoo.odoo.com/web/session/authenticate
+```
+Nếu thấy trang đăng nhập → Odoo đang chạy bình thường.
+
+**5. Kiểm tra firewall/IP**
+- Odoo SaaS của bạn có đang block IP của n8n cloud không?
+- Thử tạo credential Odoo từ local n8n (nếu có) để xem có kết nối được không
+
+**6. Cách debug nhanh**
+- Mở node Odoo → click **Execute Node**
+- Xem message lỗi chi tiết trong log
+- Nếu lỗi là `401 Unauthorized` → sai Username/Password
+- Nếu lỗi là `Cannot read properties` → chưa chọn credential
+
+### Các lỗi khác
+
 | Vấn đề | Nguyên nhân | Cách xử lý |
 |---|---|---|
-| Odoo node lỗi | Credential chưa gán/thiếu | Gán lại Odoo Credential |
 | Không thấy 2 nhánh | Import sai file | Import lại file JSON |
 | Telegram không gửi | Telegram Credential chưa đúng | Kiểm tra Bot Token, gán lại |
 | Low Stock không có tin | Không có sản phẩm tồn <= 5 | Chạy node Odoo thử, kiểm tra dữ liệu |
