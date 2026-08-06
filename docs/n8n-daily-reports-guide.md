@@ -19,29 +19,65 @@ File: `n8n/smartshop-daily-reports.json`
 
 ## Cấu hình Credential (bắt buộc)
 
-Sau khi import, workflow có 2 loại node cần gán credential (2 node Odoo + 2 node Telegram):
+Sau khi import, workflow có 2 loại node cần gán credential (2 node Odoo + 2 node Telegram).
+
+### Cách tạo Credential trong n8n
+
+**Bước 1:** Vào n8n → click **Settings** (⚙️ góc trên bên phải) → chọn **Credentials**
+
+**Bước 2:** Click **Add Credential** → tìm và chọn loại credential cần tạo
+
+**Bước 3:** Điền thông tin, đặt tên, click **Save**
+
+---
 
 ### 1. Odoo Credential
 
-- Mở node "Odoo: San pham ton kho <= 5" (hoặc node revenue)
-- Chọn Create New Credential → loại Odoo
-- Điền thông tin từ `.env`:
+- **Loại credential:** `Odoo`
+- **Tên credential:** `SmartShop Odoo` (hoặc tên bạn muốn)
 
 | Field | Giá trị |
 |---|---|
 | Site URL | `https://smartshop-odoo.odoo.com` |
+| Port | Để trống |
 | Database | `smartshop-odoo` |
 | Username | `nhatlovely2017@gmail.com` |
 | Password | Mật khẩu trong `.env` (`ODOO_PASSWORD`) |
 
-> Lưu ý bảo mật: Password được lưu trong n8n Credential (mã hóa), KHÔNG nhúng vào JSON workflow.
+> ⚠️ **Lưu ý quan trọng:**
+> - Site URL CHỈ là domain, KHÔNG thêm `/xmlrpc`, `/web`, hay `/api`
+> - Password được lưu trong n8n Credential (mã hóa), KHÔNG nhúng vào JSON workflow
+> - Nếu Odoo của bạn có 2FA, cần tạo App Password riêng
+
+**Sau khi tạo xong Odoo credential:**
+- Mở node **"Odoo: San pham ton kho <= 5"**
+- Ở phần **"Credential to connect with"**, click dropdown → chọn credential `SmartShop Odoo` vừa tạo
+- Làm tương tự cho node **"Odoo: Don ban hom nay (sale/done)"**
+
+---
 
 ### 2. Telegram Credential
 
-- Mở node "Telegram: Gui Low Stock Alert" (hoặc node revenue)
-- Chọn Create New Credential → loại Telegram API
-- Dán Bot Token từ `.env` (`TELEGRAM_BOT_TOKEN`)
-- Gán cùng credential cho cả 2 node Telegram
+- **Loại credential:** `Telegram API`
+- **Tên credential:** `SmartShop Telegram`
+
+| Field | Giá trị |
+|---|---|
+| Bot Token | `8835716387:AAGxnOylWpuvJP0r43RPMqM_txbagLkds5I` |
+
+> Lấy Bot Token từ file `.env` dòng `TELEGRAM_BOT_TOKEN`
+
+**Sau khi tạo xong Telegram credential:**
+- Mở node **"Telegram: Gui Low Stock Alert"** → chọn credential `SmartShop Telegram`
+- Mở node **"Telegram: Gui Revenue Digest"** → chọn credential `SmartShop Telegram`
+
+---
+
+### 3. Kiểm tra lại cấu hình
+
+Sau khi gán cả 2 loại credential, kiểm tra:
+- ✅ Mỗi node Odoo hiện tên credential `SmartShop Odoo` (không còn chữ "REPLACE_WITH_YOUR_ODOO_CREDENTIAL_ID")
+- ✅ Mỗi node Telegram hiện tên credential `SmartShop Telegram`
 
 ### 3. Chat ID
 
