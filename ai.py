@@ -281,19 +281,57 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
                 # Approval Gate: đơn > 20tr
                 is_create_sale_order = (
                     tu.name == "create_sale_order" or
-                    (tu.name == "execute_method" and tu.input.get("model") == "sale.order" and tu.input.get("method_name") == "create")
+                    (tu.name == "execute_method" and tu.input.get("model") == "sale.order" and tu.input.get("method_name") == "create") or
+                    (tu.name == "preview_write" and target == "sale.order")
                 )
                 if is_create_sale_order:
-                    draft = get_draft(user_id)
-                    if draft.total_amount > 20_000_000 and not DISABLE_APPROVAL_GATE:
-                        print(f"[APPROVAL GATE] Block: total={draft.total_amount:,.0f} > 20tr")
+                    calc_total = 0.0
+                    if isinstance(tu.input.get("values"), dict):
+                        vals = tu.input["values"]
+                        lines = vals.get("order_line", [])
+                        for l in lines:
+                            if isinstance(l, (list, tuple)) and len(l) == 3 and isinstance(l[2], dict):
+                                qty = float(l[2].get("product_uom_qty") or l[2].get("product_qty") or 1.0)
+                                pu = float(l[2].get("price_unit") or 0.0)
+                                if pu > 0:
+                                    calc_total += qty * pu
+                                else:
+                                    pid = l[2].get("product_id")
+                                    if pid:
+                                        try:
+                                            pdata = _odoo.search_read("product.product", [["id", "=", pid]], fields=["list_price"])
+                                            if pdata:
+                                                calc_total += qty * float(pdata[0].get("list_price", 0.0))
+                                        except Exception as e_p:
+                                            print(f"[AI] Error fetching price for approval gate: {e_p}")
+                    
+                    draft_total = max(get_draft(user_id).total_amount, calc_total)
+                    print(f"[APPROVAL GATE CHECK] calc_total={calc_total:,.0f} | draft_total={draft_total:,.0f}")
+                    if draft_total > 20_000_000 and not DISABLE_APPROVAL_GATE:
+                        print(f"[APPROVAL GATE] Block: total={draft_total:,.0f} > 20tr")
                         order_name = f"SO-{user_id}-{int(time.time())}"
                         register_order_ref(user_id, order_name)
-                        send_approval_request(order_name, draft.total_amount, u.get("full_name", user_id),
+                        
+                        # Store items in draft if not present so approve_order can fulfill later
+                        draft = get_draft(user_id)
+                        if not draft.customer_id and isinstance(tu.input.get("values"), dict):
+                            draft.customer_id = tu.input["values"].get("partner_id")
+                        if not draft.items and isinstance(tu.input.get("values"), dict):
+                            lines = tu.input["values"].get("order_line", [])
+                            for l in lines:
+                                if isinstance(l, (list, tuple)) and len(l) == 3 and isinstance(l[2], dict):
+                                    item_d = l[2]
+                                    pid = item_d.get("product_id")
+                                    pqty = float(item_d.get("product_uom_qty") or 1.0)
+                                    pprice = float(item_d.get("price_unit") or 0.0)
+                                    pname = item_d.get("name", "Product")
+                                    draft.items.append(DraftItem(pid, pname, pqty, pprice))
+                        
+                        send_approval_request(order_name, draft_total, u.get("full_name", user_id),
                                               os.getenv("ADMIN_CHAT_ID", "123456789"),
                                               telegram_id=user_id)
                         results.append({"type": "tool_result", "tool_use_id": tu.id,
-                                        "content": f"⏳ Đơn {draft.total_amount:,.0f} VNĐ (> 20tr) đã chuyển xin duyệt Manager. (order={order_name})"})
+                                        "content": f"⏳ Đơn {draft_total:,.0f} VNĐ (> 20tr) đã được chuyển xin duyệt Manager. (order={order_name})"})
                         continue
                 print(f"[ACL ALLOWED] {tu.name} -> {target}")
                 try:
