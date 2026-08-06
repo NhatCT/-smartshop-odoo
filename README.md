@@ -17,6 +17,7 @@ smartshop-odoo/
 ├── n8n/
 │   ├── n8n-workflow-a-approval-flow.json      ← Workflow A (Nhận + Gửi TG)
 │   ├── n8n-workflow-b-approval-callback.json  ← Workflow B (Callback + Gọi lại)
+│   ├── smartshop-daily-reports.json           ← Báo cáo tự động (Low stock 8:00 + Doanh thu 18:00)
 │   └── README-IMPORT.md                       ← Hướng dẫn import vào n8n
 ├── tests/
 │   ├── test_approval_workflow.py  ← 12 test approval workflow
@@ -113,6 +114,7 @@ Thư mục `n8n/` chứa 2 workflow sẵn sàng import:
 |---|---|---|
 | `n8n-workflow-a-approval-flow.json` | **Workflow A** | Nhận request từ SmartShop → gửi Telegram cho Manager kèm nút ✅/❌ |
 | `n8n-workflow-b-approval-callback.json` | **Workflow B** | Lắng nghe Manager bấm nút → gọi lại SmartShop tạo/từ chối đơn |
+| `smartshop-daily-reports.json` | **Daily Reports** | Cảnh báo tồn kho 8:00 sáng + Báo cáo doanh thu 18:00 chiều |
 
 **Cách import:**
 1. Vào n8n → **Workflows** → **Import from File**
@@ -233,6 +235,7 @@ SmartShop verify HMAC → tạo/từ chối đơn trên Odoo
 | `docs/LEAD-GUIDE.md` | Hướng dẫn sử dụng cho Lead/Quản lý (link, tài khoản, test) |
 | `docs/n8n-approval-webhook-setup.md` | Cấu hình secret webhook n8n |
 | `docs/n8n-approval-workflow-full-guide.md` | Xây dựng workflow n8n từ đầu |
+| `docs/n8n-daily-reports-guide.md` | Cài đặt workflow Daily Reports (low stock + doanh thu) |
 | `n8n/README-IMPORT.md` | Hướng dẫn import 2 workflow JSON |
 
 ## 📝 License
