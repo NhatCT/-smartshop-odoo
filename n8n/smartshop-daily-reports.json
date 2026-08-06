@@ -93,7 +93,7 @@
         "resource": "custom",
         "operation": "getAll",
         "customResource": "sale.order",
-        "filter": "={{ \"[[\\\"state\\\",\\\"in\\\",[\\\"sale\\\",\\\"done\\\"]],[\\\"date_order\\\",\\\">=\\\",\\\"\" + $now.startOf('day').format('yyyy-MM-dd') + \"\\\"],[\\\"date_order\\\",\\\"<\\\",\\\"\" + $now.add(1, 'day').startOf('day').format('yyyy-MM-dd') + \"\\\"]]\" }}",
+        "filter": "={{ \"[[\\\"state\\\",\\\"in\\\",[\\\"sale\\\",\\\"done\\\"]],[\\\"date_order\\\",\\\">=\\\",\\\"\" + $now.startOf('day').toFormat('yyyy-MM-dd') + \"\\\"],[\\\"date_order\\\",\\\"<\\\",\\\"\" + $now.add(1, 'day').startOf('day').toFormat('yyyy-MM-dd') + \"\\\"]]\" }}",
         "fields": "name, amount_total, date_order",
         "options": {
           "returnAll": true
@@ -113,7 +113,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Tong hop tat ca don hom nay -> tinh tong doanh thu + so don\nconst items = $input.all();\n\nlet total = 0;\nlet count = items.length;\n\nfor (const it of items) {\n  total += Number(it.json.amount_total || 0);\n}\n\nconst dateStr = $now.format('dd/MM/yyyy');\nconst totalStr = total.toLocaleString('vi-VN');\n\nconst msg = `📊 *BAO CAO DOANH THU KINH DOANH* 📊\\n`\n  + `_Ngay: ${dateStr}_\\n\\n`\n  + `• Tong so Don chot: *${count} Don hang*\\n`\n  + `• Tong doanh thu: *${totalStr} VND*\\n\\n`\n  + `• Tat ca don hang da duoc dong bo 100% sang Odoo 19 SaaS Enterprise.`;\n\nreturn [{ json: { chat_id: '6553206564', text: msg } }];"
+        "jsCode": "// Tong hop tat ca don hom nay -> tinh tong doanh thu + so don\nconst items = $input.all();\n\nlet total = 0;\nlet count = items.length;\n\nfor (const it of items) {\n  total += Number(it.json.amount_total || 0);\n}\n\nconst dateStr = $now.toFormat('dd/MM/yyyy');\nconst totalStr = total.toLocaleString('vi-VN');\n\nconst msg = `📊 *BAO CAO DOANH THU KINH DOANH* 📊\\n`\n  + `_Ngay: ${dateStr}_\\n\\n`\n  + `• Tong so Don chot: *${count} Don hang*\\n`\n  + `• Tong doanh thu: *${totalStr} VND*\\n\\n`\n  + `• Tat ca don hang da duoc dong bo 100% sang Odoo 19 SaaS Enterprise.`;\n\nreturn [{ json: { chat_id: '6553206564', text: msg } }];"
       },
       "id": "code-revenue",
       "name": "Code: Tong hop doanh thu",
