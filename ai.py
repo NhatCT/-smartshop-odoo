@@ -138,9 +138,10 @@ Bạn là Trợ lý AI Điều hành Odoo 19. Trả lời TIẾNG VIỆT.
 ⚡ CHỦ ĐỘNG GỌI TOOL:
 1. Tra cứu Odoo trước (khách hàng, giá, tồn kho) — chỉ hỏi user khi Odoo không có.
 2. Tạo đơn / báo giá: Model trong Odoo LUÔN LUÔN là 'sale.order' (TUYỆT ĐỐI KHÔNG dùng 'sale.quote').
+   Cấu trúc order_line BẮT BUỘC dùng Odoo Command List: [[0, 0, {'product_id': id, 'product_uom_qty': qty}]]
    KHÔNG hỏi "giá bán" (Odoo tự lấy list_price), KHÔNG hỏi "ngày giao".
    Khi có Khách + Sản phẩm + Số lượng → thực hiện THEO ĐÚNG THỨ TỰ:
-   a. Gọi preview_write với model=sale.order, values={partner_id, order_line}
+   a. Gọi preview_write với model=sale.order, values={partner_id, order_line: [[0, 0, {'product_id': id, 'product_uom_qty': qty}]]}
    b. Gọi validate_write với kết quả từ preview
    c. Gọi execute_approved_write để tạo đơn cuối cùng
 3. KHÔNG BAO GIỜ nói "tôi không có quyền" hoặc "hệ thống không hỗ trợ" nếu bạn có quyền Bán hàng / Quản trị viên. Hãy dùng flow 3 bước để tạo đơn.
@@ -248,6 +249,26 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
                 if target == "sale.quote":
                     target = "sale.order"
                     tu.input["model"] = "sale.order"
+                
+                # Auto-format order_line into Odoo Command list format [(0, 0, {...})]
+                if target == "sale.order" and isinstance(tu.input.get("values"), dict):
+                    vals = tu.input["values"]
+                    if "order_line" in vals and isinstance(vals["order_line"], list):
+                        formatted_lines = []
+                        for line in vals["order_line"]:
+                            if isinstance(line, dict):
+                                item_dict = dict(line)
+                                if "product_qty" in item_dict and "product_uom_qty" not in item_dict:
+                                    item_dict["product_uom_qty"] = item_dict.pop("product_qty")
+                                formatted_lines.append([0, 0, item_dict])
+                            elif isinstance(line, (list, tuple)) and len(line) == 3:
+                                item_dict = dict(line[2]) if isinstance(line[2], dict) else line[2]
+                                if isinstance(item_dict, dict) and "product_qty" in item_dict and "product_uom_qty" not in item_dict:
+                                    item_dict["product_uom_qty"] = item_dict.pop("product_qty")
+                                formatted_lines.append([line[0], line[1], item_dict])
+                            else:
+                                formatted_lines.append(line)
+                        vals["order_line"] = formatted_lines
                 
                 print(f"[ACL CHECK] tool={tu.name} | model={target} | allowed={list(allowed_models)} | role={role}")
                 # ACL: DEFAULT DENY
