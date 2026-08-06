@@ -171,18 +171,22 @@ async def handle_system_cmd(user_id, text):
         await tg_send(user_id, msg.replace("`", "").replace("**", ""), parse_mode=None)
         return
     if lower == "/my_role":
-        from auth import check_permission
-        auth = check_permission(user_id)
-        if not auth["allowed"]:
-            await tg_send(user_id, auth["reason"], parse_mode=None)
-        else:
-            u = auth["user_info"]
-            groups = u.get("odoo_groups", [])
-            g_str = "\n".join(f"  • {g}" for g in groups) if groups else "  • (Khong co)"
-            await tg_send(user_id,
-                f"👤 TAI KHOAN ODOO\n• Ho ten: {u.get('full_name')}\n• Email: {u.get('email')}\n"
-                f"• Vai tro: {u.get('role_category', 'viewer').upper()}\n\nNhom quyen:\n{g_str}",
-                parse_mode=None)
+        try:
+            from auth import check_permission
+            auth = check_permission(user_id)
+            if not auth["allowed"]:
+                await tg_send(user_id, auth["reason"], parse_mode=None)
+            else:
+                u = auth["user_info"]
+                groups = u.get("odoo_groups", [])
+                g_str = "\n".join(f"  • {g}" for g in groups) if groups else "  • (Khong co)"
+                await tg_send(user_id,
+                    f"👤 TAI KHOAN ODOO\n• Ho ten: {u.get('full_name')}\n• Email: {u.get('email')}\n"
+                    f"• Vai tro: {u.get('role_category', 'viewer').upper()}\n\nNhom quyen:\n{g_str}",
+                    parse_mode=None)
+        except Exception as e:
+            print(f"[CMD] /my_role error={e}")
+            await tg_send(user_id, f"❌ Không thể kiểm tra quyền: {str(e)[:150]}", parse_mode=None)
         return
     if lower in ("/clear", "/reset"):
         ai.clear_memory(user_id)
@@ -247,7 +251,11 @@ async def telegram_loop():
                         if not uid or not text:
                             continue
                         if any(text.lower().startswith(c) for c in SYSTEM_CMDS):
-                            await handle_system_cmd(uid, text)
+                            try:
+                                await handle_system_cmd(uid, text)
+                            except Exception as ex:
+                                print(f"[CMD] ERROR user={uid} cmd={text[:50]}: {ex}")
+                                await tg_send(uid, f"❌ Lỗi xử lý lệnh: {str(ex)[:150]}", parse_mode=None)
                             continue
                         # Rate limit
                         ok, rate_msg = rate_limit_check(uid)
