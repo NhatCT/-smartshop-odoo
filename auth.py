@@ -292,16 +292,56 @@ def verify_approval_token(order_name: str, approver_id: str, token: str) -> bool
     return hmac.compare_digest(sig, expected)
 
 
-# ─── Notification (n8n) ───
+# ─── Notification (EZ Direct Telegram Inline Buttons + n8n Fallback) ───
 def send_approval_request(order_name, total, employee_name, manager_chat_id, telegram_id=None):
-    url = os.getenv("N8N_APPROVAL_WEBHOOK_URL", "https://odooworkflow.app.n8n.cloud/webhook/approval-webhook")
-    try:
-        payload = json.dumps({"order_name": order_name, "total_amount": total,
-                              "employee_name": employee_name, "manager_chat_id": manager_chat_id,
-                              "telegram_id": telegram_id}).encode()
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-        urllib.request.urlopen(req, timeout=8)
-        return True
-    except Exception as e:
-        print(f"[N8N APPROVAL ERROR] {e}")
-        return False
+    token = generate_approval_token(order_name, str(manager_chat_id))
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    
+    text = (
+        f"⚠️ *YÊU CẦU PHÊ DUYỆT ĐƠN HÀNG GIÁ TRỊ LỚN*\n\n"
+        f"• Mã đơn: `{order_name}`\n"
+        f"• Nhân viên yêu cầu: *{employee_name}*\n"
+        f"• Tổng giá trị: *{total:,.0f} VNĐ* (> 20.000.000 VNĐ)\n\n"
+        f"👉 Vui lòng chọn hành động bên dưới:"
+    )
+    
+    reply_markup = {
+        "inline_keyboard": [
+            [
+                {"text": "✅ Phê duyệt", "callback_data": f"approve_{order_name}_{token}"},
+                {"text": "❌ Từ chối", "callback_data": f"reject_{order_name}_{token}"}
+            ]
+        ]
+    }
+    
+    # 1. Direct Telegram Send (EZ Workflow)
+    if bot_token and manager_chat_id:
+        try:
+            url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+            payload = json.dumps({
+                "chat_id": manager_chat_id,
+                "text": text,
+                "parse_mode": "Markdown",
+                "reply_markup": reply_markup
+            }).encode()
+            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+            urllib.request.urlopen(req, timeout=8)
+            print(f"[APPROVAL EZ] Direct Telegram approval button sent to manager {manager_chat_id}")
+            return True
+        except Exception as e:
+            print(f"[APPROVAL EZ ERROR] Direct Telegram send failed: {e}")
+    
+    # 2. Fallback to n8n if direct Telegram failed or URL provided
+    url = os.getenv("N8N_APPROVAL_WEBHOOK_URL", "")
+    if url:
+        try:
+            payload = json.dumps({"order_name": order_name, "total_amount": total,
+                                  "employee_name": employee_name, "manager_chat_id": manager_chat_id,
+                                  "telegram_id": telegram_id}).encode()
+            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+            urllib.request.urlopen(req, timeout=8)
+            return True
+        except Exception as e:
+            print(f"[N8N APPROVAL ERROR] {e}")
+            return False
+    return False

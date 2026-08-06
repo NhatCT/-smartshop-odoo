@@ -23,7 +23,7 @@
         "resource": "custom",
         "operation": "getAll",
         "customResource": "product.product",
-        "filter": "=[[\"qty_available\",\"<=\",5]]",
+        "filter": "=[[\"is_storable\",\"=\",true]]",
         "fields": "name, default_code, qty_available",
         "options": {
           "returnAll": true
@@ -44,7 +44,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Format tin nhan canh bao 1 san pham (node nay tu dong lap cho moi item)\nconst item = $input.first().json;\n\nconst name = item.name || 'N/A';\nconst sku = item.default_code || 'N/A';\nconst qty = item.qty_available !== undefined ? item.qty_available : 0;\n\nconst msg = `⚠️ *CANH BAO TON KHO AN TOAN*\\n\\n`\n  + `• San pham: ${name}\\n`\n  + `• Ma SKU: \\`${sku}\\`\\n`\n  + `• So luong ton: *${qty} cai* (Duoi muc an toan <= 5)\\n\\n`\n  + `👉 Bam nut tao Don mua hang (Draft PO) tren Odoo:`;\n\nreturn [{ json: { chat_id: '6553206564', text: msg } }];"
+        "jsCode": "// Tong hop tat ca san pham storable -> loc va format cac san pham co qty_available <= 5\nconst items = $input.all();\nconst lowStockItems = [];\n\nfor (const entry of items) {\n  const item = entry.json || {};\n  const qty = item.qty_available !== undefined ? Number(item.qty_available) : 0;\n  const sku = item.default_code;\n  if (sku && qty <= 5) {\n    lowStockItems.push(item);\n  }\n}\n\nlet msg = '';\nif (lowStockItems.length === 0) {\n  msg = `✅ *BAO CAO TON KHO AN TOAN*\\n\\n`\n    + `_Tat ca san pham trong kho Odoo 19 đều o muc an toan (> 5 cai)._\\n`\n    + `• Tong san pham kiem tra: *${items.length} san pham*\\n`\n    + `• San pham canh bao (<= 5): *0 san pham*`;\n} else {\n  const lines = lowStockItems.map(item => {\n    const name = item.name || 'N/A';\n    const sku = item.default_code || 'N/A';\n    const qty = item.qty_available !== undefined ? item.qty_available : 0;\n    return `• *${name}*\\n  Ma SKU: \\`${sku}\\` | Ton kho: *${qty} cai*`;\n  }).join('\\n\\n');\n\n  msg = `⚠️ *CANH BAO TON KHO AN TOAN*\\n\\n`\n    + `Phat hien *${lowStockItems.length} san pham* duoi muc an toan (<= 5 cai):\\n\\n`\n    + `${lines}\\n\\n`\n    + `👉 Co the gao SmartShop AI Bot de tao Don mua hang (Draft PO) tren Odoo.`;\n}\n\nreturn [{ json: { chat_id: '6553206564', text: msg } }];"
       },
       "id": "code-lowstock",
       "name": "Code: Format Low Stock Alert",
