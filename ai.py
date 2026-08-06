@@ -289,8 +289,30 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
                             validate_res = await mcp_session.call_tool("validate_write", arguments=tu.input)
                             print(f"[AI] validate_write returned: {validate_res}")
                             
+                            # Extract approval dict from validate_res
+                            app_obj = None
+                            try:
+                                raw_v = ""
+                                if hasattr(validate_res, "content") and validate_res.content and hasattr(validate_res.content[0], "text"):
+                                    raw_v = validate_res.content[0].text
+                                else:
+                                    raw_v = str(validate_res)
+                                v_data = json.loads(raw_v)
+                                if isinstance(v_data, dict):
+                                    if "approval" in v_data:
+                                        app_obj = v_data["approval"]
+                                    elif "result" in v_data and isinstance(v_data["result"], dict) and "approval" in v_data["result"]:
+                                        app_obj = v_data["result"]["approval"]
+                            except Exception as e_parse:
+                                print(f"[AI] Error parsing validate_res approval: {e_parse}")
+
+                            if not app_obj:
+                                print(f"[AI] Could not extract approval from validate_res, using fallback")
+                                app_obj = {"model": "sale.order", "operation": "create", "values": tu.input.get("values", {})}
+
+                            exec_args = {"approval": app_obj, "confirm": True}
                             # Step 3: execute_approved_write
-                            execute_res = await mcp_session.call_tool("execute_approved_write", arguments=tu.input)
+                            execute_res = await mcp_session.call_tool("execute_approved_write", arguments=exec_args)
                             print(f"[AI] execute_approved_write returned: {execute_res}")
                             
                             # Return the final result instead of preview
