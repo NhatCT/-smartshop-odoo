@@ -27,12 +27,13 @@
         "fields": "name, default_code, qty_available",
         "options": {
           "returnAll": true
-        }
+        },
+        "verify": "false"
       },
       "id": "odoo-lowstock",
       "name": "Odoo: San pham ton kho <= 5",
       "type": "n8n-nodes-base.odoo",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [240, 200],
       "credentials": {
         "odooApi": {
@@ -97,12 +98,13 @@
         "fields": "name, amount_total, date_order",
         "options": {
           "returnAll": true
-        }
+        },
+        "verify": "false"
       },
       "id": "odoo-revenue",
       "name": "Odoo: Don ban hom nay (sale/done)",
       "type": "n8n-nodes-base.odoo",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [240, 500],
       "credentials": {
         "odooApi": {
