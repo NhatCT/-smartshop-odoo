@@ -226,7 +226,9 @@ async def telegram_loop():
         print(f"❌ [TELEGRAM] MCP package not ready: {e}")
         return
 
-    server_params = StdioServerParameters(command="python", args=["-m", "odoo_mcp"], env=dict(os.environ))
+    mcp_env = dict(os.environ)
+    mcp_env["ODOO_MCP_ENABLE_WRITES"] = "1"
+    server_params = StdioServerParameters(command="python", args=["-m", "odoo_mcp"], env=mcp_env)
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
