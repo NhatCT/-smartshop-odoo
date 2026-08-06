@@ -327,9 +327,9 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
                                     pname = item_d.get("name", "Product")
                                     draft.items.append(DraftItem(pid, pname, pqty, pprice))
                         
+                        mgr_id = os.getenv("ADMIN_CHAT_ID") or user_id
                         send_approval_request(order_name, draft_total, u.get("full_name", user_id),
-                                              os.getenv("ADMIN_CHAT_ID", "123456789"),
-                                              telegram_id=user_id)
+                                              mgr_id, telegram_id=user_id)
                         results.append({"type": "tool_result", "tool_use_id": tu.id,
                                         "content": f"⏳ Đơn {draft_total:,.0f} VNĐ (> 20tr) đã được chuyển xin duyệt Manager. (order={order_name})"})
                         continue

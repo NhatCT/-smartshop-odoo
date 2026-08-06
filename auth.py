@@ -294,14 +294,22 @@ def verify_approval_token(order_name: str, approver_id: str, token: str) -> bool
 
 # ─── Notification (EZ Direct Telegram Inline Buttons + n8n Fallback) ───
 def send_approval_request(order_name, total, employee_name, manager_chat_id, telegram_id=None):
-    token = generate_approval_token(order_name, str(manager_chat_id))
+    target_chat_id = manager_chat_id if (manager_chat_id and str(manager_chat_id) not in ("123456789", "N/A", "")) else (telegram_id or os.getenv("ADMIN_CHAT_ID", "6553206564"))
+    token = generate_approval_token(order_name, str(target_chat_id))
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     
-    text = (
+    text_md = (
         f"⚠️ *YÊU CẦU PHÊ DUYỆT ĐƠN HÀNG GIÁ TRỊ LỚN*\n\n"
         f"• Mã đơn: `{order_name}`\n"
         f"• Nhân viên yêu cầu: *{employee_name}*\n"
         f"• Tổng giá trị: *{total:,.0f} VNĐ* (> 20.000.000 VNĐ)\n\n"
+        f"👉 Vui lòng chọn hành động bên dưới:"
+    )
+    text_plain = (
+        f"⚠️ YÊU CẦU PHÊ DUYỆT ĐƠN HÀNG GIÁ TRỊ LỚN\n\n"
+        f"• Mã đơn: {order_name}\n"
+        f"• Nhân viên yêu cầu: {employee_name}\n"
+        f"• Tổng giá trị: {total:,.0f} VNĐ (> 20.000.000 VNĐ)\n\n"
         f"👉 Vui lòng chọn hành động bên dưới:"
     )
     
@@ -314,29 +322,28 @@ def send_approval_request(order_name, total, employee_name, manager_chat_id, tel
         ]
     }
     
-    # 1. Direct Telegram Send (EZ Workflow)
-    if bot_token and manager_chat_id:
-        try:
-            url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-            payload = json.dumps({
-                "chat_id": manager_chat_id,
-                "text": text,
-                "parse_mode": "Markdown",
-                "reply_markup": reply_markup
-            }).encode()
-            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-            urllib.request.urlopen(req, timeout=8)
-            print(f"[APPROVAL EZ] Direct Telegram approval button sent to manager {manager_chat_id}")
-            return True
-        except Exception as e:
-            print(f"[APPROVAL EZ ERROR] Direct Telegram send failed: {e}")
+    # 1. Direct Telegram Send (EZ Workflow with retry fallback)
+    if bot_token and target_chat_id:
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        for pmode, txt in [("Markdown", text_md), (None, text_plain)]:
+            try:
+                body = {"chat_id": target_chat_id, "text": txt, "reply_markup": reply_markup}
+                if pmode:
+                    body["parse_mode"] = pmode
+                payload = json.dumps(body).encode()
+                req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+                urllib.request.urlopen(req, timeout=8)
+                print(f"[APPROVAL EZ] Direct Telegram approval button sent to chat_id={target_chat_id}")
+                return True
+            except Exception as e:
+                print(f"[APPROVAL EZ ERROR] Direct Telegram send failed (pmode={pmode}): {e}")
     
     # 2. Fallback to n8n if direct Telegram failed or URL provided
     url = os.getenv("N8N_APPROVAL_WEBHOOK_URL", "")
     if url:
         try:
             payload = json.dumps({"order_name": order_name, "total_amount": total,
-                                  "employee_name": employee_name, "manager_chat_id": manager_chat_id,
+                                  "employee_name": employee_name, "manager_chat_id": target_chat_id,
                                   "telegram_id": telegram_id}).encode()
             req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
             urllib.request.urlopen(req, timeout=8)
