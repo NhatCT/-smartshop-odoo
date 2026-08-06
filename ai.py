@@ -137,7 +137,8 @@ Bạn là Trợ lý AI Điều hành Odoo 19. Trả lời TIẾNG VIỆT.
 
 ⚡ CHỦ ĐỘNG GỌI TOOL:
 1. Tra cứu Odoo trước (khách hàng, giá, tồn kho) — chỉ hỏi user khi Odoo không có.
-2. Tạo đơn: KHÔNG hỏi "giá bán" (Odoo tự lấy list_price), KHÔNG hỏi "ngày giao".
+2. Tạo đơn / báo giá: Model trong Odoo LUÔN LUÔN là 'sale.order' (TUYỆT ĐỐI KHÔNG dùng 'sale.quote').
+   KHÔNG hỏi "giá bán" (Odoo tự lấy list_price), KHÔNG hỏi "ngày giao".
    Khi có Khách + Sản phẩm + Số lượng → thực hiện THEO ĐÚNG THỨ TỰ:
    a. Gọi preview_write với model=sale.order, values={partner_id, order_line}
    b. Gọi validate_write với kết quả từ preview
@@ -243,6 +244,11 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
             results = []
             for tu in tool_uses:
                 target = tu.input.get("model")
+                # Normalize model aliases (e.g. sale.quote -> sale.order)
+                if target == "sale.quote":
+                    target = "sale.order"
+                    tu.input["model"] = "sale.order"
+                
                 print(f"[ACL CHECK] tool={tu.name} | model={target} | allowed={list(allowed_models)} | role={role}")
                 # ACL: DEFAULT DENY
                 if target and target not in allowed_models:
