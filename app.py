@@ -118,18 +118,18 @@ async def handle_callback(callback, message_handler):
     except Exception:
         pass
     # Convert callback to text
-    if data.startswith("approve_") or data.startswith("reject_"):
+    if data.startswith("app_") or data.startswith("rej_") or data.startswith("approve_") or data.startswith("reject_"):
         parts = data.split("_")
-        action = parts[0]
-        order_name = "_".join(parts[1:-1])
+        action = "approve" if parts[0] in ("app", "approve") else "reject"
+        order_name = parts[1] if len(parts) == 3 else "_".join(parts[1:-1])
         token = parts[-1]
         if not verify_approval_token(order_name, user_id, token):
             await tg_send(user_id, "Token khong hop le.", parse_mode=None)
             return
         if action == "approve":
-            _, msg = ai.approve_order(order_name)
+            _, msg = ai.approve_order(order_name, telegram_id=user_id)
         else:
-            _, msg = ai.reject_order(order_name)
+            _, msg = ai.reject_order(order_name, telegram_id=user_id)
         await tg_send(user_id, msg, parse_mode=None)
         return
     # Other callbacks → delegate to AI

@@ -309,7 +309,7 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
                     print(f"[APPROVAL GATE CHECK] calc_total={calc_total:,.0f} | draft_total={draft_total:,.0f}")
                     if draft_total > 20_000_000 and not DISABLE_APPROVAL_GATE:
                         print(f"[APPROVAL GATE] Block: total={draft_total:,.0f} > 20tr")
-                        order_name = f"SO-{user_id}-{int(time.time())}"
+                        order_name = f"SO-{int(time.time())}"
                         register_order_ref(user_id, order_name)
                         
                         # Store items in draft if not present so approve_order can fulfill later

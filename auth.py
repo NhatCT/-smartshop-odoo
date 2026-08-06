@@ -275,20 +275,21 @@ _APPROVAL_SECRET = os.getenv("APPROVAL_TOKEN_SECRET") or os.getenv("ODOO_PASSWOR
 def generate_approval_token(order_name: str, approver_id: str, ttl=86400) -> str:
     ts = str(int(time.time()))
     payload = f"{order_name}:{approver_id}:{ts}:{ttl}"
-    sig = hmac.new(_APPROVAL_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()[:24]
-    return f"{ts}.{ttl}.{sig}"
+    sig = hmac.new(_APPROVAL_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()[:12]
+    return f"{ts}.{sig}"
 
 
 def verify_approval_token(order_name: str, approver_id: str, token: str) -> bool:
     try:
-        ts_s, ttl_s, sig = token.split(".", 2)
-        ts, ttl = int(ts_s), int(ttl_s)
+        ts_s, sig = token.split(".", 1)
+        ts = int(ts_s)
+        ttl = 86400
     except Exception:
         return False
     if time.time() > ts + ttl:
         return False
     payload = f"{order_name}:{approver_id}:{ts}:{ttl}"
-    expected = hmac.new(_APPROVAL_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()[:24]
+    expected = hmac.new(_APPROVAL_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()[:12]
     return hmac.compare_digest(sig, expected)
 
 
@@ -313,11 +314,12 @@ def send_approval_request(order_name, total, employee_name, manager_chat_id, tel
         f"👉 Vui lòng chọn hành động bên dưới:"
     )
     
+    # Telegram callback_data must be <= 64 bytes
     reply_markup = {
         "inline_keyboard": [
             [
-                {"text": "✅ Phê duyệt", "callback_data": f"approve_{order_name}_{token}"},
-                {"text": "❌ Từ chối", "callback_data": f"reject_{order_name}_{token}"}
+                {"text": "✅ Phê duyệt", "callback_data": f"app_{order_name}_{token}"},
+                {"text": "❌ Từ chối", "callback_data": f"rej_{order_name}_{token}"}
             ]
         ]
     }
