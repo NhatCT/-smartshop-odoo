@@ -31,7 +31,7 @@ def call_hermes_engine(text: str) -> str:
     os.makedirs("scratch", exist_ok=True)
     try:
         cmd = ["hermes", "-z", text, "--usage-file", usage_file]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=90, encoding="utf-8")
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=35, encoding="utf-8")
         out = res.stdout.strip() or res.stderr.strip()
         
         # Đọc chi tiết token thực tế từ file usage
