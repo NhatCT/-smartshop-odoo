@@ -129,17 +129,18 @@ Nguyễn Thành Nhật"""
 
     return html_text
 
-# 4. Gửi Email HTML qua Gmail SMTP
-def send_email(html_content):
+# 4. Gửi Email HTML qua Gmail SMTP (Có hỗ trợ đính kèm File)
+def send_email(html_content, attachment_paths=None):
+    from email.mime.application import MIMEApplication
     today = datetime.now().strftime("%d/%m/%Y")
     sender_email = os.getenv('EMAIL_USER') or 'nguyenthanhnhat19824@gmail.com'
     receiver_email = 'anthony@technext.asia'
     
     if not os.getenv('EMAIL_PASS'):
         log_msg("Cảnh báo: EMAIL_PASS chưa được thiết lập. Bỏ qua bước gửi mail.")
-        return
+        return False
 
-    msg = MIMEMultipart('alternative')
+    msg = MIMEMultipart()
     msg['Subject'] = f"Daily Report - {today} - Nguyễn Thành Nhật"
     msg['From'] = f"Nhật Nguyễn Thành <{sender_email}>"
     msg['To'] = receiver_email
@@ -147,13 +148,90 @@ def send_email(html_content):
     part = MIMEText(html_content, 'html', 'utf-8')
     msg.attach(part)
 
+    # Đính kèm danh sách file nếu có
+    if attachment_paths:
+        for path in attachment_paths:
+            if os.path.exists(path):
+                try:
+                    with open(path, "rb") as f:
+                        fname = os.path.basename(path)
+                        attachment = MIMEApplication(f.read(), Name=fname)
+                        attachment['Content-Disposition'] = f'attachment; filename="{fname}"'
+                        msg.attach(attachment)
+                        log_msg(f"📎 Đã đính kèm file: {fname}")
+                except Exception as ex:
+                    log_msg(f"Lỗi đính kèm file {path}: {ex}")
+
     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
         server.login(sender_email, os.getenv('EMAIL_PASS'))
         server.send_message(msg)
-    log_msg("Báo cáo đã gửi thành công!")
+    log_msg("✅ Báo cáo đã gửi thành công!")
+    return True
+
+
+# 5. Gửi bản xem trước (Preview) sang Telegram Manager
+def send_telegram_preview(html_content):
+    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    mgr_id = os.getenv('ADMIN_CHAT_ID') or '6553206564'
+    if not token:
+        log_msg("Cảnh báo: Không tìm thấy TELEGRAM_BOT_TOKEN.")
+        return False
+
+    import sys
+    ts = int(datetime.now().timestamp())
+
+    # Lưu pending report
+    pending_file = "scratch/pending_report.json"
+    os.makedirs("scratch", exist_ok=True)
+    report_data = {
+        "ts": ts,
+        "html_content": html_content,
+        "attachments": [],
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    with open(pending_file, "w", encoding="utf-8") as f:
+        json.dump(report_data, f, ensure_ascii=False, indent=2)
+
+    # Tạo tin nhắn preview gọn
+    preview_msg = f"""📋 **XEM TRƯỚC BÁO CÁO DAILY REPORT ({datetime.now().strftime('%d/%m/%Y')})**
+
+Anh Anthony thân mến, dưới đây là bản thảo báo cáo tiến độ hôm nay:
+
+---
+{html_content[:350]}...
+---
+
+👉 **Vui lòng chọn hành động bên dưới:**"""
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    keyboard = {
+        "inline_keyboard": [
+            [
+                {"text": "📩 GỬI MAIL NGAY", "callback_data": f"rpt_send_{ts}"},
+                {"text": "📎 ĐÍNH KÈM FILE", "callback_data": f"rpt_att_{ts}"}
+            ],
+            [
+                {"text": "❌ HỦY BÁO CÁO HÔM NAY", "callback_data": f"rpt_can_{ts}"}
+            ]
+        ]
+    }
+
+    try:
+        res = requests.post(url, json={"chat_id": mgr_id, "text": preview_msg, "parse_mode": "Markdown", "reply_markup": keyboard}, timeout=10)
+        log_msg("📩 Đã gửi bản xem trước báo cáo tới Telegram Manager!")
+        return res.ok
+    except Exception as e:
+        log_msg(f"Lỗi gửi Telegram Preview: {e}")
+        return False
+
 
 if __name__ == "__main__":
+    import sys
     commits = get_github_commits()
     tg_note = get_telegram_note()
     html_body = generate_email_body(commits, tg_note)
-    send_email(html_body)
+    
+    if "--preview" in sys.argv:
+        send_telegram_preview(html_body)
+    else:
+        send_email(html_body)
