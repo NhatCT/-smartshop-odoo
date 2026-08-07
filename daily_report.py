@@ -132,11 +132,11 @@ Nguyễn Thành Nhật"""
 # 4. Gửi Email HTML qua Gmail SMTP
 def send_email(html_content):
     today = datetime.now().strftime("%d/%m/%Y")
-    sender_email = os.getenv('EMAIL_USER')
+    sender_email = os.getenv('EMAIL_USER') or 'nguyenthanhnhat19824@gmail.com'
     receiver_email = 'anthony@technext.asia'
     
-    if not sender_email or not os.getenv('EMAIL_PASS'):
-        log_msg("Cảnh báo: EMAIL_USER hoặc EMAIL_PASS chưa được thiết lập. Bỏ qua bước gửi mail.")
+    if not os.getenv('EMAIL_PASS'):
+        log_msg("Cảnh báo: EMAIL_PASS chưa được thiết lập. Bỏ qua bước gửi mail.")
         return
 
     msg = MIMEMultipart('alternative')
