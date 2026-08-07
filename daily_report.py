@@ -170,17 +170,8 @@ def send_email(html_content, attachment_paths=None):
     return True
 
 
-# 5. Gửi bản xem trước (Preview) sang Telegram Manager
-def send_telegram_preview(html_content):
-    token = (os.getenv('TELEGRAM_BOT_TOKEN') or '').strip()
-    mgr_id = (os.getenv('ADMIN_CHAT_ID') or '6553206564').strip()
-    if not token:
-        log_msg("Cảnh báo: Không tìm thấy TELEGRAM_BOT_TOKEN.")
-        return False
-
-    ts = int(datetime.now().timestamp())
-
-    # Lưu pending report
+def save_pending_report(html_content, ts):
+    """Lưu bản thảo báo cáo vào Odoo System Parameter & File tạm local."""
     pending_file = "scratch/pending_report.json"
     os.makedirs("scratch", exist_ok=True)
     report_data = {
@@ -191,6 +182,76 @@ def send_telegram_preview(html_content):
     }
     with open(pending_file, "w", encoding="utf-8") as f:
         json.dump(report_data, f, ensure_ascii=False, indent=2)
+
+    try:
+        from odoo import OdooClient
+        client = OdooClient()
+        odoo = client.connect()
+        param = odoo.env['ir.config_parameter']
+        param.set_param('daily_report_pending_html', html_content)
+        param.set_param('daily_report_pending_ts', str(ts))
+        param.set_param('daily_report_pending_attachments', '[]')
+        log_msg("✅ Đã lưu bản thảo báo cáo lên Odoo System Parameter thành công!")
+    except Exception as ex:
+        log_msg(f"Lưu Odoo Parameter chưa thành công: {ex}")
+
+
+def load_pending_report():
+    """Tải bản thảo báo cáo từ Odoo System Parameter hoặc File tạm local."""
+    try:
+        from odoo import OdooClient
+        client = OdooClient()
+        odoo = client.connect()
+        param = odoo.env['ir.config_parameter']
+        html = param.get_param('daily_report_pending_html')
+        ts = param.get_param('daily_report_pending_ts')
+        atts_raw = param.get_param('daily_report_pending_attachments') or '[]'
+        if html and str(html).strip():
+            atts = json.loads(atts_raw) if isinstance(atts_raw, str) else []
+            return {"ts": ts, "html_content": html, "attachments": atts}
+    except Exception as ex:
+        log_msg(f"Đọc từ Odoo Parameter chưa thành công: {ex}")
+
+    pending_file = "scratch/pending_report.json"
+    if os.path.exists(pending_file):
+        try:
+            with open(pending_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return None
+
+
+def clear_pending_report():
+    """Xóa bản thảo báo cáo đã gửi hoặc đã hủy."""
+    try:
+        from odoo import OdooClient
+        client = OdooClient()
+        odoo = client.connect()
+        param = odoo.env['ir.config_parameter']
+        param.set_param('daily_report_pending_html', '')
+        param.set_param('daily_report_pending_ts', '')
+        param.set_param('daily_report_pending_attachments', '[]')
+    except Exception:
+        pass
+    pending_file = "scratch/pending_report.json"
+    if os.path.exists(pending_file):
+        try:
+            os.remove(pending_file)
+        except Exception:
+            pass
+
+
+# 5. Gửi bản xem trước (Preview) sang Telegram Manager
+def send_telegram_preview(html_content):
+    token = (os.getenv('TELEGRAM_BOT_TOKEN') or '').strip()
+    mgr_id = (os.getenv('ADMIN_CHAT_ID') or '6553206564').strip()
+    if not token:
+        log_msg("Cảnh báo: Không tìm thấy TELEGRAM_BOT_TOKEN.")
+        return False
+
+    ts = int(datetime.now().timestamp())
+    save_pending_report(html_content, ts)
 
     # Tạo tin nhắn preview gọn
     clean_preview = html_content.replace("<br>", "\n").replace("<p>", "").replace("</p>", "\n").replace("<ul>", "").replace("</ul>", "").replace("<li>", "• ").replace("</li>", "\n").replace("<strong>", "").replace("</strong>", "")
