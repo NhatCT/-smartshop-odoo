@@ -172,13 +172,12 @@ def send_email(html_content, attachment_paths=None):
 
 # 5. Gửi bản xem trước (Preview) sang Telegram Manager
 def send_telegram_preview(html_content):
-    token = os.getenv('TELEGRAM_BOT_TOKEN')
-    mgr_id = os.getenv('ADMIN_CHAT_ID') or '6553206564'
+    token = (os.getenv('TELEGRAM_BOT_TOKEN') or '').strip()
+    mgr_id = (os.getenv('ADMIN_CHAT_ID') or '6553206564').strip()
     if not token:
         log_msg("Cảnh báo: Không tìm thấy TELEGRAM_BOT_TOKEN.")
         return False
 
-    import sys
     ts = int(datetime.now().timestamp())
 
     # Lưu pending report
@@ -194,15 +193,8 @@ def send_telegram_preview(html_content):
         json.dump(report_data, f, ensure_ascii=False, indent=2)
 
     # Tạo tin nhắn preview gọn
-    preview_msg = f"""📋 **XEM TRƯỚC BÁO CÁO DAILY REPORT ({datetime.now().strftime('%d/%m/%Y')})**
-
-Anh Anthony thân mến, dưới đây là bản thảo báo cáo tiến độ hôm nay:
-
----
-{html_content[:350]}...
----
-
-👉 **Vui lòng chọn hành động bên dưới:**"""
+    clean_preview = html_content.replace("<br>", "\n").replace("<p>", "").replace("</p>", "\n").replace("<ul>", "").replace("</ul>", "").replace("<li>", "• ").replace("</li>", "\n").replace("<strong>", "").replace("</strong>", "")
+    preview_msg = f"📋 XEM TRƯỚC BÁO CÁO DAILY REPORT ({datetime.now().strftime('%d/%m/%Y')})\n\nAnh Anthony thân mến, dưới đây là bản thảo báo cáo tiến độ hôm nay:\n\n---\n{clean_preview[:350]}...\n---\n\n👉 Vui lòng chọn hành động bên dưới:"
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     keyboard = {
@@ -218,9 +210,13 @@ Anh Anthony thân mến, dưới đây là bản thảo báo cáo tiến độ h
     }
 
     try:
-        res = requests.post(url, json={"chat_id": mgr_id, "text": preview_msg, "parse_mode": "Markdown", "reply_markup": keyboard}, timeout=10)
-        log_msg("📩 Đã gửi bản xem trước báo cáo tới Telegram Manager!")
-        return res.ok
+        res = requests.post(url, json={"chat_id": mgr_id, "text": preview_msg, "reply_markup": keyboard}, timeout=10)
+        if res.ok:
+            log_msg("📩 Đã gửi bản xem trước báo cáo tới Telegram Manager!")
+            return True
+        else:
+            log_msg(f"⚠️ Telegram API Response ({res.status_code}): {res.text}")
+            return False
     except Exception as e:
         log_msg(f"Lỗi gửi Telegram Preview: {e}")
         return False
