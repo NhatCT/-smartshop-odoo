@@ -135,17 +135,14 @@ async def handle_callback(callback, message_handler):
 
     # Handle Daily Report Preview callbacks
     if data.startswith("rpt_send_") or data.startswith("rpt_att_") or data.startswith("rpt_can_"):
-        pending_file = "scratch/pending_report.json"
-        if not os.path.exists(pending_file):
-            await tg_send(user_id, "⚠️ Không tìm thấy bản thảo báo cáo cần xử lý.")
+        import daily_report
+        report_data = daily_report.load_pending_report()
+        if not report_data or not report_data.get("html_content"):
+            await tg_send(user_id, "⚠️ Không tìm thấy bản thảo báo cáo cần xử lý (hoặc báo cáo đã được gửi/hủy trước đó).")
             return
 
         try:
-            with open(pending_file, "r", encoding="utf-8") as f:
-                report_data = json.load(f)
-
             if data.startswith("rpt_send_"):
-                import daily_report
                 atts = report_data.get("attachments", [])
                 ok = daily_report.send_email(report_data["html_content"], atts)
                 if ok:
@@ -153,13 +150,12 @@ async def handle_callback(callback, message_handler):
                     if atts:
                         msg += f"\n📎 Đã đính kèm {len(atts)} file."
                     await tg_send(user_id, msg)
-                    os.remove(pending_file)
+                    daily_report.clear_pending_report()
                 else:
-                    await tg_send(user_id, "❌ Lỗi gửi email báo cáo. Vui lòng kiểm tra lại cấu hình SMTP.")
+                    await tg_send(user_id, "❌ Lỗi gửi email báo cáo. Vui lòng kiểm tra lại cấu hình SMTP/EMAIL_PASS.")
             elif data.startswith("rpt_can_"):
                 await tg_send(user_id, "🗑️ **Đã hủy gửi bản báo cáo Daily Report hôm nay.**")
-                if os.path.exists(pending_file):
-                    os.remove(pending_file)
+                daily_report.clear_pending_report()
             elif data.startswith("rpt_att_"):
                 await tg_send(user_id, "📎 **HƯỚNG DẪN ĐÍNH KÈM FILE**:\n\nVui lòng gửi trực tiếp file đính kèm (PDF, Excel, Word, Zip...) vào khung chat Telegram này. Bot sẽ tự động nhận và đính kèm vào Email Daily Report cho bạn!")
         except Exception as ex:
