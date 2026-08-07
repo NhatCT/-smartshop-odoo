@@ -132,6 +132,40 @@ async def handle_callback(callback, message_handler):
             _, msg = ai.reject_order(order_name, telegram_id=user_id)
         await tg_send(user_id, msg, parse_mode=None)
         return
+
+    # Handle Daily Report Preview callbacks
+    if data.startswith("rpt_send_") or data.startswith("rpt_att_") or data.startswith("rpt_can_"):
+        pending_file = "scratch/pending_report.json"
+        if not os.path.exists(pending_file):
+            await tg_send(user_id, "⚠️ Không tìm thấy bản thảo báo cáo cần xử lý.")
+            return
+
+        try:
+            with open(pending_file, "r", encoding="utf-8") as f:
+                report_data = json.load(f)
+
+            if data.startswith("rpt_send_"):
+                import daily_report
+                atts = report_data.get("attachments", [])
+                ok = daily_report.send_email(report_data["html_content"], atts)
+                if ok:
+                    msg = "✅ **BÁO CÁO DAILY REPORT ĐÃ ĐƯỢC GỬI THÀNH CÔNG TỚI ANTHONY@TECHNEXT.ASIA!**"
+                    if atts:
+                        msg += f"\n📎 Đã đính kèm {len(atts)} file."
+                    await tg_send(user_id, msg)
+                    os.remove(pending_file)
+                else:
+                    await tg_send(user_id, "❌ Lỗi gửi email báo cáo. Vui lòng kiểm tra lại cấu hình SMTP.")
+            elif data.startswith("rpt_can_"):
+                await tg_send(user_id, "🗑️ **Đã hủy gửi bản báo cáo Daily Report hôm nay.**")
+                if os.path.exists(pending_file):
+                    os.remove(pending_file)
+            elif data.startswith("rpt_att_"):
+                await tg_send(user_id, "📎 **HƯỚNG DẪN ĐÍNH KÈM FILE**:\n\nVui lòng gửi trực tiếp file đính kèm (PDF, Excel, Word, Zip...) vào khung chat Telegram này. Bot sẽ tự động nhận và đính kèm vào Email Daily Report cho bạn!")
+        except Exception as ex:
+            await tg_send(user_id, f"❌ Lỗi xử lý callback báo cáo: {ex}")
+        return
+
     # Other callbacks → delegate to AI
     text = data
     if data.startswith("action:draft_order:"):
