@@ -19,6 +19,19 @@ def get_client():
 MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
 MAX_TURNS = 2
 DISABLE_APPROVAL_GATE = os.getenv("DISABLE_APPROVAL_GATE", "0").lower() in ("1", "true", "yes")
+USE_HERMES_ENGINE = os.getenv("USE_HERMES_ENGINE", "0").lower() in ("1", "true", "yes")
+
+
+def call_hermes_engine(text: str) -> str:
+    """Gọi Hermes Agent Engine ngầm ở CLI mode."""
+    import subprocess
+    try:
+        res = subprocess.run(["hermes", "-z", text], capture_output=True, text=True, timeout=90, encoding="utf-8")
+        out = res.stdout.strip() or res.stderr.strip()
+        return out
+    except Exception as e:
+        print(f"[HERMES ENGINE ERROR] {e}")
+        return ""
 
 # ─── Draft Order ───
 class DraftItem:
@@ -70,7 +83,7 @@ def register_order_ref(user_id, order_name):
 
 # ─── Approval Fulfillment ───
 def approve_order(order_name, telegram_id=None) -> tuple[bool, str]:
-    uid = telegram_id or _order_refs.get(order_name)
+    uid = _order_refs.get(order_name) or telegram_id
     if not uid:
         return False, f"❌ Không tìm thấy đơn `{order_name}`."
     draft = get_draft(uid)
@@ -92,7 +105,7 @@ def approve_order(order_name, telegram_id=None) -> tuple[bool, str]:
 
 
 def reject_order(order_name, telegram_id=None) -> tuple[bool, str]:
-    uid = telegram_id or _order_refs.get(order_name)
+    uid = _order_refs.get(order_name) or telegram_id
     if not uid:
         return False, f"❌ Không tìm thấy đơn `{order_name}`."
     clear_draft(uid)
@@ -207,6 +220,24 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
         clear_draft(user_id)
         return "🧹 **Đã xóa bộ nhớ hội thoại!**"
 
+    # Hermes Agent Invisible Engine fallback
+    if USE_HERMES_ENGINE:
+        draft = get_draft(user_id)
+        if draft.total_amount > 20_000_000 and not DISABLE_APPROVAL_GATE:
+            order_name = f"SO-{user_id}-{int(time.time())}"
+            register_order_ref(user_id, order_name)
+            mgr_id = os.getenv("ADMIN_CHAT_ID") or user_id
+            send_approval_request(order_name, draft.total_amount, u.get("full_name", user_id),
+                                  mgr_id, telegram_id=user_id)
+            return f"⏳ Đơn {draft.total_amount:,.0f} VNĐ (> 20tr) đã được chuyển xin duyệt Manager. (order={order_name})"
+
+        print(f"[HERMES ENGINE] Processing query for user={user_id}: {text}")
+        reply = call_hermes_engine(text)
+        if reply:
+            add_message(user_id, "user", text)
+            add_message(user_id, "assistant", reply)
+            return reply
+
     # Build tools list from MCP
     tools = []
     if mcp_session:
@@ -309,7 +340,7 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
                     print(f"[APPROVAL GATE CHECK] calc_total={calc_total:,.0f} | draft_total={draft_total:,.0f}")
                     if draft_total > 20_000_000 and not DISABLE_APPROVAL_GATE:
                         print(f"[APPROVAL GATE] Block: total={draft_total:,.0f} > 20tr")
-                        order_name = f"SO-{int(time.time())}"
+                        order_name = f"SO-{user_id}-{int(time.time())}"
                         register_order_ref(user_id, order_name)
                         
                         # Store items in draft if not present so approve_order can fulfill later

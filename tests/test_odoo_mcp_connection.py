@@ -12,7 +12,7 @@ if sys.platform == "win32":
 
 load_dotenv()
 
-def test_environment():
+def check_environment():
     print("[1/3] Kiểm tra các biến môi trường Odoo...")
     odoo_url = os.getenv("ODOO_URL")
     odoo_db = os.getenv("ODOO_DB")
@@ -29,7 +29,7 @@ def test_environment():
     print("  [OK] ODOO_PASSWORD: ********")
     return True
 
-def test_odoo_mcp_import():
+def check_odoo_mcp_import():
     print("\n[2/3] Kiểm tra module odoo_mcp...")
     try:
         import odoo_mcp
@@ -44,8 +44,8 @@ def main():
     print("SMART SHOP - HERMES AGENT & ODOO MCP AUDIT")
     print("=" * 60)
     
-    env_ok = test_environment()
-    mcp_ok = test_odoo_mcp_import()
+    env_ok = check_environment()
+    mcp_ok = check_odoo_mcp_import()
     
     print("\n------------------------------------------------------------")
     if env_ok and mcp_ok:
@@ -57,4 +57,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
