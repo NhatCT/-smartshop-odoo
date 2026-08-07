@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 import smtplib
 from datetime import datetime
@@ -94,7 +95,7 @@ def generate_email_body(commits, tg_note):
     LƯU Ý: Chỉ trả về nội dung HTML, không kèm các câu dẫn hay ký tự markdown ```html.
     """
     
-    model_names = ['gemini-1.5-flash-latest', 'gemini-2.0-flash', 'gemini-1.5-flash-001', 'gemini-pro']
+    model_names = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash']
     html_text = ""
     for m in model_names:
         try:
