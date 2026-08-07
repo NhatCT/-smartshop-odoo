@@ -23,11 +23,34 @@ USE_HERMES_ENGINE = os.getenv("USE_HERMES_ENGINE", "0").lower() in ("1", "true",
 
 
 def call_hermes_engine(text: str) -> str:
-    """Gọi Hermes Agent Engine ngầm ở CLI mode."""
+    """Gọi Hermes Agent Engine ngầm ở CLI mode kèm đo đạc Token usage thực tế."""
     import subprocess
+    import json
+    import os
+    usage_file = "scratch/last_usage.json"
+    os.makedirs("scratch", exist_ok=True)
     try:
-        res = subprocess.run(["hermes", "-z", text], capture_output=True, text=True, timeout=90, encoding="utf-8")
+        cmd = ["hermes", "-z", text, "--usage-file", usage_file]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=90, encoding="utf-8")
         out = res.stdout.strip() or res.stderr.strip()
+        
+        # Đọc chi tiết token thực tế từ file usage
+        if os.path.exists(usage_file):
+            try:
+                with open(usage_file, "r", encoding="utf-8") as f:
+                    usage = json.load(f)
+                    inp = usage.get("input_tokens", 0)
+                    outp = usage.get("output_tokens", 0)
+                    cache_r = usage.get("cache_read_tokens", 0)
+                    cache_w = usage.get("cache_write_tokens", 0)
+                    total = usage.get("total_tokens", 0)
+                    model = usage.get("model", MODEL)
+                    # Ước tính chi phí Anthropic API
+                    est_cost = (inp * 0.25 + cache_r * 0.03 + cache_w * 0.30 + outp * 1.25) / 1_000_000
+                    print(f"📊 [TOKEN METRICS LIVE] Input: {inp:,} | Output: {outp:,} | CacheWrite: {cache_w:,} | CacheRead: {cache_r:,} | Total: {total:,} tokens | Chi phí: ~${est_cost:.4f} USD | Model: {model}")
+            except Exception as ex:
+                print(f"[TOKEN LOG ERROR] {ex}")
+                
         return out
     except Exception as e:
         print(f"[HERMES ENGINE ERROR] {e}")
