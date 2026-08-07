@@ -133,35 +133,6 @@ async def handle_callback(callback, message_handler):
         await tg_send(user_id, msg, parse_mode=None)
         return
 
-    # Handle Daily Report Preview callbacks
-    if data.startswith("rpt_send_") or data.startswith("rpt_att_") or data.startswith("rpt_can_"):
-        import daily_report
-        report_data = daily_report.load_pending_report()
-        if not report_data or not report_data.get("html_content"):
-            await tg_send(user_id, "⚠️ Không tìm thấy bản thảo báo cáo cần xử lý (hoặc báo cáo đã được gửi/hủy trước đó).")
-            return
-
-        try:
-            if data.startswith("rpt_send_"):
-                atts = report_data.get("attachments", [])
-                ok = daily_report.send_email(report_data["html_content"], atts)
-                if ok:
-                    msg = "✅ **BÁO CÁO DAILY REPORT ĐÃ ĐƯỢC GỬI THÀNH CÔNG TỚI ANTHONY@TECHNEXT.ASIA!**"
-                    if atts:
-                        msg += f"\n📎 Đã đính kèm {len(atts)} file."
-                    await tg_send(user_id, msg)
-                    daily_report.clear_pending_report()
-                else:
-                    await tg_send(user_id, "❌ Lỗi gửi email báo cáo. Vui lòng kiểm tra lại cấu hình SMTP/EMAIL_PASS.")
-            elif data.startswith("rpt_can_"):
-                await tg_send(user_id, "🗑️ **Đã hủy gửi bản báo cáo Daily Report hôm nay.**")
-                daily_report.clear_pending_report()
-            elif data.startswith("rpt_att_"):
-                await tg_send(user_id, "📎 **HƯỚNG DẪN ĐÍNH KÈM FILE**:\n\nVui lòng gửi trực tiếp file đính kèm (PDF, Excel, Word, Zip...) vào khung chat Telegram này. Bot sẽ tự động nhận và đính kèm vào Email Daily Report cho bạn!")
-        except Exception as ex:
-            await tg_send(user_id, f"❌ Lỗi xử lý callback báo cáo: {ex}")
-        return
-
     # Other callbacks → delegate to AI
     text = data
     if data.startswith("action:draft_order:"):
