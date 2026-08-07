@@ -23,8 +23,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests google-generativeai
 
-      - name: Run daily report script (Telegram Preview Mode)
-        run: python daily_report.py --preview
+      - name: Run daily report script (Direct Automatic Mode)
+        run: python daily_report.py
         env:
           GH_USERNAME: "ThanhNhat1908"
           YOUR_NAME: "Nguyễn Thành Nhật"
