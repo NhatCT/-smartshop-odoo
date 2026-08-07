@@ -286,6 +286,7 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
         if reply:
             add_message(user_id, "user", text)
             add_message(user_id, "assistant", reply)
+            print(f"[TOKEN AUDIT] User={user_id} | Model={MODEL} | Status=SUCCESS | Length={len(reply)} chars")
             return reply
 
     # Build tools list from MCP
