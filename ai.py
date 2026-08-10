@@ -22,15 +22,41 @@ DISABLE_APPROVAL_GATE = os.getenv("DISABLE_APPROVAL_GATE", "0").lower() in ("1",
 USE_HERMES_ENGINE = os.getenv("USE_HERMES_ENGINE", "0").lower() in ("1", "true", "yes")
 
 
+def load_dynamic_skill(text: str) -> str:
+    """Tự động phát hiện và nạp nội dung SKILL.md phù hợp từ thư mục .agents/skills/ theo ngữ cảnh."""
+    lower = text.lower()
+    skill_map = {
+        ("tồn kho", "kiểm kho", "nhập hàng", "xuất kho", "kho"): ".agents/skills/inventory-skill/SKILL.md",
+        ("công nợ", "hóa đơn", "kế toán", "doanh thu", "tài chính"): ".agents/skills/accounting-skill/SKILL.md",
+        ("báo giá", "tạo đơn", "bán hàng", "chiết khấu", "khách hàng"): ".agents/skills/sales-skill/SKILL.md",
+        ("sản phẩm", "giá", "biến thể", "danh mục", "mô tả"): ".agents/skills/product-skill/SKILL.md",
+    }
+    for keywords, path in skill_map.items():
+        if any(k in lower for k in keywords):
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        print(f"[HERMES SKILL LOADED] {path}")
+                        return f"\n--- [HERMES SKILL CONTEXT: {path}] ---\n{content[:1500]}\n--- END SKILL CONTEXT ---\n"
+                except Exception as ex:
+                    print(f"[SKILL LOAD ERROR] {path}: {ex}")
+    return ""
+
+
 def call_hermes_engine(text: str) -> str:
-    """Gọi Hermes Agent Engine ngầm ở CLI mode kèm đo đạc Token usage thực tế."""
+    """Gọi Hermes Agent Engine ngầm ở CLI mode kèm Dynamic Skill Auto-Discovery & Token usage."""
     import subprocess
     import json
     import os
     usage_file = "scratch/last_usage.json"
     os.makedirs("scratch", exist_ok=True)
+    
+    skill_context = load_dynamic_skill(text)
+    full_prompt = f"{skill_context}\nUser Request: {text}" if skill_context else text
+
     try:
-        cmd = ["hermes", "-z", text, "--usage-file", usage_file]
+        cmd = ["hermes", "-z", full_prompt, "--usage-file", usage_file]
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=35, encoding="utf-8")
         out = res.stdout.strip() or res.stderr.strip()
         
