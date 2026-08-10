@@ -49,6 +49,14 @@ def _resp(blocks):
 class ApprovalWorkflowTest(unittest.TestCase):
     """Test toàn bộ workflow approve: gate → n8n → webhook → tạo đơn."""
 
+    def setUp(self):
+        import ai
+        os.environ["N8N_APPROVAL_WEBHOOK_SECRET"] = "test-secret-123"
+        ai._drafts.clear()
+        ai._order_refs.clear()
+        ai._memory.clear()
+        ai._memory_ts.clear()
+
     # ─── 1. TEST APPROVAL GATE KÍCH HOẠT ───
     @patch("ai.get_client")
     def test_1_approval_gate_blocks_large_order(self, mock_client_fn):
@@ -231,7 +239,7 @@ class ApprovalWorkflowTest(unittest.TestCase):
         self.assertEqual(result[1], 401)
         print(f"\n✅ [TEST 5] Webhook signature sai bị từ chối: {result[0]}")
 
-    # ─── 6. TEST TELEGRAM INLINE BUTTON APPROVE ───
+    # ─── 6. TEST TELEGRAM INLINE BUTTON (APPROVE) ───
     def test_6_telegram_inline_approve(self):
         """Bấm nút Approve trên Telegram phải tạo đơn."""
         import ai
