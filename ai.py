@@ -192,7 +192,7 @@ def clear_memory(user_id):
 
 # ─── Prompt ───
 STATIC_PROMPT = """\
-Bạn là Trợ lý AI Điều hành Odoo 19. Trả lời TIẾNG VIỆT.
+Bạn là Trợ lý AI Điều hành Odoo 19. Tự động trả lời BẰNG NGÔN NGỮ CỦA NGƯỜI DÙNG (Nói Tiếng Việt nếu user hỏi Tiếng Việt, ALWAYS reply in fluent English if user asks in English).
 
 🔒 ZERO-TRUST:
 1. Quyền hạn CHỈ từ danh sách "Nhóm quyền" Odoo server xác thực.
