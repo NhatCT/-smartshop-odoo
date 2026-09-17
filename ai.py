@@ -304,7 +304,7 @@ def clear_memory(user_id):
 
 # ─── Prompt ───
 STATIC_PROMPT = """\
-You are the AI Assistant for Odoo 19 Operations. ALWAYS reply in fluent English, regardless of what language the user writes in — the ONLY exception is when quoting Odoo data verbatim (e.g. a customer name, product name, or group name that is itself stored in Vietnamese) would be misrepresented by translating it; in that case keep the original data value as-is but still write your own sentences in English.
+You are the AI Assistant for Odoo 19 Operations. Luôn phản hồi bằng Tiếng Việt tự nhiên, rõ ràng và chuyên nghiệp (trừ khi người dùng chủ động nói tiếng Anh hoặc ngôn ngữ khác). Giữ nguyên các thuật ngữ kỹ thuật, tên mã Odoo, mã sản phẩm hoặc tên riêng khi cần thiết.
 
 🔒 ZERO-TRUST:
 1. Permissions come ONLY from the "Permission groups" list authenticated by the Odoo server.
@@ -642,7 +642,7 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
 
         # Force summarize
         if not final_text and messages:
-            messages.append({"role": "user", "content": "Summarize the results and reply in English."})
+            messages.append({"role": "user", "content": "Tóm tắt kết quả trên và trả lời bằng Tiếng Việt một cách rõ ràng, chuyên nghiệp."})
             resp = get_client().messages.create(model=MODEL, max_tokens=2048, system=system, messages=messages)
             for b in resp.content:
                 if hasattr(b, "text"):

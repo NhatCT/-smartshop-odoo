@@ -147,16 +147,18 @@ async def handle_system_cmd(user_id, text):
     print(f"[CMD] user={user_id} cmd={lower}")
     if lower in ("/start", "/help"):
         await tg_send(user_id, (
-            "👋 SMARTSHOP AI ASSISTANT\n\n"
-            "• 🔍 Look up products & prices\n• 📦 Check stock\n"
-            "• 📋 Create quotes & orders\n• 📊 View outstanding balances\n\n"
-            "Commands: /register /verify /bind /my_role /clear"
+            "👋 TRỢ LÝ AI ĐIỀU HÀNH ERP SMARTSHOP\n\n"
+            "• 🔍 Tra cứu sản phẩm & bảng giá\n"
+            "• 📦 Kiểm tra tồn kho thời gian thực\n"
+            "• 📋 Lập báo giá & đơn bán hàng\n"
+            "• 📊 Xem công nợ & báo cáo bán hàng\n\n"
+            "Lệnh hệ thống: /bind /my_role /clear /help"
         ), parse_mode=None)
         return
     if lower.startswith("/register"):
         parts = text.split()
         if len(parts) < 2:
-            await tg_send(user_id, "Usage: /register email@company.com", parse_mode=None)
+            await tg_send(user_id, "Cú pháp: /register email@company.com", parse_mode=None)
             return
         ok, msg = request_otp(user_id, parts[1])
         print(f"[CMD] /register result={ok} msg={msg}")
@@ -165,7 +167,7 @@ async def handle_system_cmd(user_id, text):
     if lower.startswith("/bind"):
         parts = text.split()
         if len(parts) < 2:
-            await tg_send(user_id, "Usage: /bind email@company.com", parse_mode=None)
+            await tg_send(user_id, "Cú pháp: /bind email@company.com", parse_mode=None)
             return
         ok, msg = bind_direct(user_id, parts[1])
         print(f"[CMD] /bind result={ok} msg={msg}")
@@ -174,7 +176,7 @@ async def handle_system_cmd(user_id, text):
     if lower.startswith("/verify"):
         parts = text.split()
         if len(parts) < 2:
-            await tg_send(user_id, "Usage: /verify OTP_CODE", parse_mode=None)
+            await tg_send(user_id, "Cú pháp: /verify MÃ_OTP", parse_mode=None)
             return
         ok, msg = verify_otp(user_id, parts[1])
         print(f"[CMD] /verify result={ok} msg={msg}")
