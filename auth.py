@@ -5,10 +5,12 @@ import hmac
 import json
 import os
 import secrets
+import smtplib
 import threading
 import time
 import urllib.request
 from collections import OrderedDict, defaultdict, deque
+from email.mime.text import MIMEText
 from pathlib import Path
 
 from odoo import OdooClient
@@ -149,6 +151,28 @@ _pending_approval: dict[str, dict] = {}
 OTP_TTL = 300
 
 
+def send_email(to_email: str, subject: str, body: str) -> tuple[bool, str]:
+    """Send a plain-text email via SMTP (Gmail by default)."""
+    host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    port = int(os.getenv("SMTP_PORT", "587"))
+    user = os.getenv("SMTP_USER", "")
+    password = os.getenv("SMTP_PASSWORD", "")
+    if not user or not password:
+        return False, "SMTP not configured (missing SMTP_USER/SMTP_PASSWORD)"
+    try:
+        msg = MIMEText(body, "plain", "utf-8")
+        msg["Subject"] = subject
+        msg["From"] = user
+        msg["To"] = to_email
+        with smtplib.SMTP(host, port, timeout=10) as server:
+            server.starttls()
+            server.login(user, password)
+            server.sendmail(user, [to_email], msg.as_string())
+        return True, "sent"
+    except Exception as e:
+        return False, str(e)
+
+
 def request_otp(telegram_id, email) -> tuple[bool, str]:
     email = email.lower().strip()
     try:
@@ -167,15 +191,20 @@ def request_otp(telegram_id, email) -> tuple[bool, str]:
     _pending_otp[str(telegram_id)] = {"email": email, "otp": otp, "ts": time.time()}
     if email in REQUIRES_ADMIN_APPROVAL:
         _pending_approval[str(telegram_id)] = {"email": email, "ts": time.time()}
-    # Send OTP via n8n
-    url = os.getenv("N8N_OTP_WEBHOOK_URL", "https://odooworkflow.app.n8n.cloud/webhook/send-otp-email")
-    try:
-        payload = json.dumps({"to_email": email, "otp_code": otp, "employee_name": users[0].get("name", email)}).encode()
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-        urllib.request.urlopen(req, timeout=8)
+    # Send OTP via direct SMTP email
+    name = users[0].get("name", email)
+    subject = "SmartShop AI Assistant — Your OTP Code"
+    body = (
+        f"Hi {name},\n\n"
+        f"Your one-time verification code is: {otp}\n\n"
+        f"This code expires in {int(OTP_TTL // 60)} minutes.\n"
+        f"Reply in Telegram with: /verify {otp}\n\n"
+        f"If you did not request this, you can safely ignore this email."
+    )
+    ok, err = send_email(email, subject, body)
+    if ok:
         return True, f"✉️ OTP code sent to `{email}`. Type `/verify <6-DIGIT_OTP>`"
-    except Exception as e:
-        return False, f"❌ Could not send OTP: {e}"
+    return False, f"❌ Could not send OTP: {err}"
 
 
 def verify_otp(telegram_id, user_otp) -> tuple[bool, str]:
