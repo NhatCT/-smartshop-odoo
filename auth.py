@@ -214,18 +214,20 @@ def send_email(to_email: str, subject: str, body: str, otp: str = "") -> tuple[b
 
 
 def request_otp(telegram_id, email) -> tuple[bool, str]:
-    email = email.lower().strip()
+    email = email.strip("<>\"' ").lower()
+    if email in ("<email>", "email", "email@company.com", "<email@company.com>"):
+        return False, "⚠️ Vui lòng nhập địa chỉ email Odoo thật của bạn (Ví dụ: /register nhatlovely2017@gmail.com)"
     try:
         users = _odoo.search_read("res.users", ["|", ["login", "=ilike", email], ["email", "=ilike", email]],
                                   ["id", "name", "login", "active", "email"], 1)
         print(f"[ODOO SEARCH] request_otp email={email} results={len(users)} users={[u.get('login') or u.get('email') for u in users]}")
     except Exception as e:
         print(f"[ODOO SEARCH ERROR] request_otp: {e}")
-        return False, f"❌ Odoo connection error: {e}"
+        return False, f"❌ Lỗi kết nối Odoo: {e}"
     if not users:
-        return False, f"❌ Email '{email}' does not exist in Odoo."
+        return False, f"❌ Email '{email}' không tồn tại trong hệ thống Odoo. Vui lòng kiểm tra lại chính xác email tài khoản của bạn."
     if not users[0].get("active", True):
-        return False, f"🚨 Account '{email}' has been disabled."
+        return False, f"🚨 Tài khoản '{email}' đã bị vô hiệu hóa trên Odoo."
     import random
     otp = f"{random.randint(100000, 999999)}"
     _pending_otp[str(telegram_id)] = {"email": email, "otp": otp, "ts": time.time()}
@@ -243,30 +245,32 @@ def request_otp(telegram_id, email) -> tuple[bool, str]:
     )
     ok, err = send_email(email, subject, body, otp=otp)
     if ok:
-        return True, f"✉️ OTP code sent to `{email}`. Type `/verify <6-DIGIT_OTP>`"
+        return True, f"✉️ Đã gửi mã OTP đến email `{email}`. Vui lòng nhập `/verify <MÃ_OTP>`"
 
     # FALLBACK METHOD (CÁCH KHÁC): When email delivery fails or times out,
     # display the OTP code directly in Telegram so the user is NEVER stuck!
     print(f"[OTP FALLBACK] Email delivery failed ({err}). Providing OTP directly: {otp}")
     return True, (
-        f"⚠️ Email sending timed out / failed ({err}).\n"
-        f"🔑 Fallback OTP code for `{email}`: `{otp}`\n"
-        f"👉 Type: `/verify {otp}` to link your account."
+        f"⚠️ Không thể gửi email ({err}).\n"
+        f"🔑 Mã OTP dự phòng cho tài khoản `{email}`: `{otp}`\n"
+        f"👉 Nhập lệnh: `/verify {otp}` để hoàn tất liên kết."
     )
 
 
 def bind_direct(telegram_id, email) -> tuple[bool, str]:
     """Directly link Telegram ID to Odoo user email without requiring email OTP."""
-    email = email.lower().strip()
+    email = email.strip("<>\"' ").lower()
+    if email in ("<email>", "email", "email@company.com", "<email@company.com>"):
+        return False, "⚠️ Vui lòng nhập địa chỉ email Odoo thật của bạn (Ví dụ: /bind nhatlovely2017@gmail.com)"
     try:
         users = _odoo.search_read("res.users", ["|", ["login", "=ilike", email], ["email", "=ilike", email]],
                                   ["id", "name", "login", "active", "email"], 1)
     except Exception as e:
-        return False, f"❌ Odoo connection error: {e}"
+        return False, f"❌ Lỗi kết nối Odoo: {e}"
     if not users:
-        return False, f"❌ Email '{email}' does not exist in Odoo."
+        return False, f"❌ Email '{email}' không tồn tại trong hệ thống Odoo. Vui lòng kiểm tra lại chính xác email tài khoản của bạn."
     if not users[0].get("active", True):
-        return False, f"🚨 Account '{email}' has been disabled."
+        return False, f"🚨 Tài khoản '{email}' đã bị vô hiệu hóa trên Odoo."
 
     sid = str(telegram_id)
     try:
