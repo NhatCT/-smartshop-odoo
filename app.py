@@ -29,6 +29,7 @@ from fastapi import FastAPI, Request
 import uvicorn
 
 import ai
+import vision as _vision
 from auth import (check_permission, request_otp, verify_otp, bind_direct, rate_limit_check,
                   idempotency_check, idempotency_store, verify_approval_token)
 
@@ -267,6 +268,33 @@ async def telegram_loop():
                         if callback:
                             await handle_callback(callback, message_handler)
                             continue
+
+                        # ─── Computer Vision: handle photo messages ───
+                        photos = msg.get("photo", [])
+                        if uid and photos:
+                            # Check auth first
+                            perm = check_permission(uid)
+                            if not perm["allowed"]:
+                                await tg_send(uid, perm["reason"], parse_mode=None)
+                                continue
+                            # Pick highest resolution photo
+                            best = max(photos, key=lambda p: p.get("file_size", 0))
+                            file_id = best["file_id"]
+                            await tg_send(uid, "🔍 Analyzing image with Gemini Vision...", parse_mode=None)
+                            try:
+                                img_bytes = await asyncio.to_thread(
+                                    _vision.download_telegram_photo, file_id)
+                                if img_bytes:
+                                    vision_resp = await asyncio.to_thread(
+                                        _vision.analyze_product_image, img_bytes)
+                                    await tg_send(uid, vision_resp, parse_mode=None)
+                                else:
+                                    await tg_send(uid, "❌ Could not download image. Please try again.", parse_mode=None)
+                            except Exception as ve:
+                                print(f"[VISION] Error: {ve}")
+                                await tg_send(uid, f"❌ Vision error: {str(ve)[:150]}", parse_mode=None)
+                            continue
+
                         if not uid or not text:
                             continue
                         if any(text.lower().startswith(c) for c in SYSTEM_CMDS):
