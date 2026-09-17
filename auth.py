@@ -152,11 +152,13 @@ _pending_approval: dict[str, dict] = {}
 OTP_TTL = 300
 
 
-def _getaddrinfo_ipv4_only(*args, **kwargs):
+def _getaddrinfo_ipv4_only(host, port, family=0, type=0, proto=0, flags=0):
     """Some hosts (e.g. Render) have no outbound IPv6 route, which makes the
     stdlib pick an unreachable AAAA record and fail with 'Network is
-    unreachable'. Force IPv4 resolution for the duration of the SMTP call."""
-    return _orig_getaddrinfo(args[0], args[1], socket.AF_INET, *args[2:], **kwargs)
+    unreachable'. Force IPv4 resolution for the duration of the SMTP call.
+    Only overrides `family` — every other positional slot is passed through
+    unchanged so socktype/proto/flags never get shifted."""
+    return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
 
 
 _orig_getaddrinfo = socket.getaddrinfo
