@@ -122,7 +122,7 @@ def get_client():
 
 def get_model_name():
     if os.getenv("DEEPSEEK_API_KEY") or os.getenv("LLM_PROVIDER", "").lower() == "deepseek":
-        return os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        return os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
     if os.getenv("GEMINI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"):
         return os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
     return os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
