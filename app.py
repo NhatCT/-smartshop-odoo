@@ -28,7 +28,7 @@ from fastapi import FastAPI, Request
 import uvicorn
 
 import ai
-from auth import (check_permission, request_otp, verify_otp, rate_limit_check,
+from auth import (check_permission, request_otp, verify_otp, bind_direct, rate_limit_check,
                   idempotency_check, idempotency_store, verify_approval_token)
 
 # ─── FastAPI ───
@@ -150,7 +150,7 @@ async def handle_system_cmd(user_id, text):
             "👋 SMARTSHOP AI ASSISTANT\n\n"
             "• 🔍 Look up products & prices\n• 📦 Check stock\n"
             "• 📋 Create quotes & orders\n• 📊 View outstanding balances\n\n"
-            "Commands: /register /verify /my_role /clear"
+            "Commands: /register /verify /bind /my_role /clear"
         ), parse_mode=None)
         return
     if lower.startswith("/register"):
@@ -160,6 +160,15 @@ async def handle_system_cmd(user_id, text):
             return
         ok, msg = request_otp(user_id, parts[1])
         print(f"[CMD] /register result={ok} msg={msg}")
+        await tg_send(user_id, msg.replace("`", "").replace("**", ""), parse_mode=None)
+        return
+    if lower.startswith("/bind"):
+        parts = text.split()
+        if len(parts) < 2:
+            await tg_send(user_id, "Usage: /bind email@company.com", parse_mode=None)
+            return
+        ok, msg = bind_direct(user_id, parts[1])
+        print(f"[CMD] /bind result={ok} msg={msg}")
         await tg_send(user_id, msg.replace("`", "").replace("**", ""), parse_mode=None)
         return
     if lower.startswith("/verify"):

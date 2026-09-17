@@ -71,7 +71,7 @@ class E2EFlowTest(unittest.TestCase):
         ai.register_order_ref("emp1", "SO001")
         ok, msg = ai.approve_order("SO001")
         self.assertTrue(ok)
-        self.assertIn("PHÊ DUYỆT", msg)
+        self.assertTrue(any(word in msg for word in ["PHÊ DUYỆT", "APPROVED"]))
         ai._odoo.create.assert_called_once()
 
     def test_4_reject_order(self):
@@ -82,7 +82,7 @@ class E2EFlowTest(unittest.TestCase):
         ai.register_order_ref("emp2", "SO002")
         ok, msg = ai.reject_order("SO002")
         self.assertTrue(ok)
-        self.assertIn("từ chối", msg.lower())
+        self.assertTrue(any(word in msg.lower() for word in ["từ chối", "rejected"]))
 
     @patch("ai.get_client")
     def test_5_tool_loop(self, mock_client_fn):
@@ -180,19 +180,26 @@ class E2EFlowTest(unittest.TestCase):
             mock_clear_mem.assert_called_once_with("123")
             mock_clear_draft.assert_called_once_with("123")
             mock_send.assert_called_once()
-            self.assertIn("xoa", mock_send.call_args[0][1].lower())
+            self.assertTrue(any(word in mock_send.call_args[0][1].lower() for word in ["xoa", "cleared"]))
 
         # Test /register thiếu email
         with patch("app.tg_send", new_callable=AsyncMock) as mock_send:
             asyncio.run(handle_system_cmd("123", "/register"))
             mock_send.assert_called_once()
-            self.assertIn("cu phap", mock_send.call_args[0][1].lower())
+            self.assertTrue(any(word in mock_send.call_args[0][1].lower() for word in ["cu phap", "usage"]))
 
         # Test /register có email
         with patch("app.request_otp", return_value=(True, "OTP sent")) as mock_otp, \
              patch("app.tg_send", new_callable=AsyncMock) as mock_send:
             asyncio.run(handle_system_cmd("123", "/register test@test.com"))
             mock_otp.assert_called_once_with("123", "test@test.com")
+            mock_send.assert_called_once()
+
+        # Test /bind có email
+        with patch("app.bind_direct", return_value=(True, "Linked")) as mock_bind, \
+             patch("app.tg_send", new_callable=AsyncMock) as mock_send:
+            asyncio.run(handle_system_cmd("123", "/bind test@test.com"))
+            mock_bind.assert_called_once_with("123", "test@test.com")
             mock_send.assert_called_once()
 
 

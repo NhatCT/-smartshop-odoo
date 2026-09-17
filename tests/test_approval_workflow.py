@@ -273,7 +273,7 @@ class ApprovalWorkflowTest(unittest.TestCase):
             asyncio.run(handle_callback(callback, None))
             mock_send.assert_called_once()
             msg = mock_send.call_args[0][1]
-            self.assertIn("PHÊ DUYỆT", msg)
+            self.assertTrue(any(word in msg for word in ["PHÊ DUYỆT", "APPROVED"]))
             print(f"\n✅ [TEST 6] Telegram inline approve thành công: {msg[:80]}...")
 
     # ─── 7. TEST TELEGRAM INLINE REJECT ───
@@ -303,7 +303,7 @@ class ApprovalWorkflowTest(unittest.TestCase):
             asyncio.run(handle_callback(callback, None))
             mock_send.assert_called_once()
             msg = mock_send.call_args[0][1]
-            self.assertIn("từ chối", msg.lower())
+            self.assertTrue(any(word in msg.lower() for word in ["từ chối", "rejected"]))
             self.assertNotIn("emp7", ai._drafts)
             print(f"\n✅ [TEST 7] Telegram inline reject thành công: {msg[:80]}...")
 
@@ -425,7 +425,7 @@ class ApprovalWorkflowTest(unittest.TestCase):
 
         ok, msg = ai.approve_order("SO-emp11-12345")
         self.assertFalse(ok)
-        self.assertIn("đã xử lý", msg)
+        self.assertTrue(any(word in msg.lower() for word in ["đã xử lý", "already been processed"]))
         print(f"\n✅ [TEST 11] Approve đơn đã xử lý bị từ chối: {msg[:60]}...")
 
     # ─── 12. TEST APPROVE ĐƠN KHÔNG TỒN TẠI ───
@@ -435,7 +435,7 @@ class ApprovalWorkflowTest(unittest.TestCase):
 
         ok, msg = ai.approve_order("SO-KHONG-TON-TAI")
         self.assertFalse(ok)
-        self.assertIn("không tìm thấy", msg.lower())
+        self.assertTrue(any(word in msg.lower() for word in ["không tìm thấy", "not found"]))
         print(f"\n✅ [TEST 12] Approve đơn không tồn tại bị từ chối: {msg[:60]}...")
 
 

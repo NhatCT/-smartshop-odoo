@@ -164,8 +164,31 @@ def _getaddrinfo_ipv4_only(host, port, family=0, type=0, proto=0, flags=0):
 _orig_getaddrinfo = socket.getaddrinfo
 
 
-def send_email(to_email: str, subject: str, body: str) -> tuple[bool, str]:
-    """Send a plain-text email via SMTP (Gmail by default)."""
+def send_email(to_email: str, subject: str, body: str, otp: str = "") -> tuple[bool, str]:
+    """Send a plain-text email via n8n HTTP Webhook or SMTP (Gmail)."""
+    # 1. Try n8n HTTP Webhook first if configured (Port 443 — reliable, fast, never blocked)
+    n8n_url = os.getenv("N8N_OTP_WEBHOOK_URL", "").strip()
+    if n8n_url:
+        try:
+            payload = json.dumps({
+                "email": to_email,
+                "subject": subject,
+                "body": body,
+                "otp": otp
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                n8n_url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                if resp.status in (200, 201, 202, 204):
+                    return True, "sent via n8n HTTP webhook"
+        except Exception as e:
+            print(f"[N8N WEBHOOK OTP FAIL] {e}")
+
+    # 2. Try direct SMTP
     host = os.getenv("SMTP_HOST", "smtp.gmail.com")
     port = int(os.getenv("SMTP_PORT", "587"))
     user = os.getenv("SMTP_USER", "")
@@ -179,13 +202,13 @@ def send_email(to_email: str, subject: str, body: str) -> tuple[bool, str]:
         msg["To"] = to_email
         socket.getaddrinfo = _getaddrinfo_ipv4_only
         try:
-            with smtplib.SMTP(host, port, timeout=10) as server:
+            with smtplib.SMTP(host, port, timeout=5) as server:
                 server.starttls()
                 server.login(user, password)
                 server.sendmail(user, [to_email], msg.as_string())
         finally:
             socket.getaddrinfo = _orig_getaddrinfo
-        return True, "sent"
+        return True, "sent via SMTP"
     except Exception as e:
         return False, str(e)
 
@@ -208,7 +231,7 @@ def request_otp(telegram_id, email) -> tuple[bool, str]:
     _pending_otp[str(telegram_id)] = {"email": email, "otp": otp, "ts": time.time()}
     if email in REQUIRES_ADMIN_APPROVAL:
         _pending_approval[str(telegram_id)] = {"email": email, "ts": time.time()}
-    # Send OTP via direct SMTP email
+    # Send OTP via direct SMTP email or n8n webhook
     name = users[0].get("name", email)
     subject = "SmartShop AI Assistant — Your OTP Code"
     body = (
@@ -218,10 +241,47 @@ def request_otp(telegram_id, email) -> tuple[bool, str]:
         f"Reply in Telegram with: /verify {otp}\n\n"
         f"If you did not request this, you can safely ignore this email."
     )
-    ok, err = send_email(email, subject, body)
+    ok, err = send_email(email, subject, body, otp=otp)
     if ok:
         return True, f"✉️ OTP code sent to `{email}`. Type `/verify <6-DIGIT_OTP>`"
-    return False, f"❌ Could not send OTP: {err}"
+
+    # FALLBACK METHOD (CÁCH KHÁC): When email delivery fails or times out,
+    # display the OTP code directly in Telegram so the user is NEVER stuck!
+    print(f"[OTP FALLBACK] Email delivery failed ({err}). Providing OTP directly: {otp}")
+    return True, (
+        f"⚠️ Email sending timed out / failed ({err}).\n"
+        f"🔑 Fallback OTP code for `{email}`: `{otp}`\n"
+        f"👉 Type: `/verify {otp}` to link your account."
+    )
+
+
+def bind_direct(telegram_id, email) -> tuple[bool, str]:
+    """Directly link Telegram ID to Odoo user email without requiring email OTP."""
+    email = email.lower().strip()
+    try:
+        users = _odoo.search_read("res.users", ["|", ["login", "=ilike", email], ["email", "=ilike", email]],
+                                  ["id", "name", "login", "active", "email"], 1)
+    except Exception as e:
+        return False, f"❌ Odoo connection error: {e}"
+    if not users:
+        return False, f"❌ Email '{email}' does not exist in Odoo."
+    if not users[0].get("active", True):
+        return False, f"🚨 Account '{email}' has been disabled."
+
+    sid = str(telegram_id)
+    try:
+        bindings = get_bindings()
+        bindings[sid] = email
+        save_bindings(bindings)
+    except Exception as e:
+        return False, f"❌ Error saving binding: {e}"
+
+    ctx = fetch_user_context(email) or {}
+    return True, (
+        f"✅ ACCOUNT LINKED DIRECTLY!\nAccount: `{email}`\n"
+        f"Full name: {ctx.get('full_name', email)}\n"
+        f"Role: {ctx.get('role_category', 'viewer').upper()}"
+    )
 
 
 def verify_otp(telegram_id, user_otp) -> tuple[bool, str]:
