@@ -12,6 +12,17 @@ import json
 import os
 import urllib.request
 
+# Ensure .env is loaded
+if os.path.exists(".env") and not os.getenv("GEMINI_API_KEY"):
+    with open(".env", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                k = k.strip()
+                if k not in os.environ:
+                    os.environ[k] = v.strip()
+
 from odoo import OdooClient
 
 # Lazy Odoo client - initialized on first search to avoid blocking at import time
@@ -24,22 +35,30 @@ def _get_odoo() -> OdooClient:
         _odoo_client = OdooClient()
     return _odoo_client
 
-# Active Gemini model for this API key (gemini-3.6-flash)
-_GEMINI_MODEL = os.getenv("GEMINI_VISION_MODEL", "gemini-3.6-flash")
+# Candidate Gemini models for vision in priority order
+_CANDIDATE_MODELS = [
+    os.getenv("GEMINI_VISION_MODEL", "gemini-3.8-flash"),
+    "gemini-flash-latest",
+    "gemini-3.5-flash-lite",
+    "gemini-3.6-flash",
+]
 
 _VISION_PROMPT = (
     "You are a retail product recognition AI for a Singapore electronics store. "
-    "Analyze the image and respond ONLY in this exact JSON format (no markdown, no explanation):\n"
-    '{"type":"product","product_name":"<brand+model e.g. MacBook Pro 14 M3 Pro>",'
-    '"barcode_value":"<barcode/QR text if visible else empty>","brand":"<brand>",'
-    '"category":"<Electronics/Peripherals/Accessories/Other>",'
-    '"confidence":"<High/Medium/Low>","notes":"<color, model number, any detail>"}\n'
-    "If no product is identifiable, set type to \"unknown\" and product_name to \"\"."
+    "Analyze the image and DO YOUR BEST to identify any product, even if the image is not perfect. "
+    "Look for: product name text, brand logo, barcode, model number, packaging, or any visible label. "
+    "Respond ONLY in this exact JSON format (no markdown, no explanation):\n"
+    '{"type":"product","product_name":"<brand+model e.g. MacBook Pro 14 M3 Pro - use your best guess>",'
+    '"barcode_value":"<barcode/QR string if visible else empty>","brand":"<brand name>",'
+    '"category":"<Electronics/Peripherals/Accessories/Phone/Laptop/Mouse/Keyboard/Other>",'
+    '"confidence":"<High/Medium/Low>","notes":"<color, model number, storage, any visible detail>"}\n'
+    "IMPORTANT: Always make your best guess for product_name. "
+    "Only set type to \"unknown\" if the image contains NO product at all (e.g., a person, landscape, document)."
 )
 
 
 def _call_gemini_vision(image_bytes: bytes) -> dict:
-    """Call Gemini Vision via google.genai SDK (new SDK, replaces google.generativeai)."""
+    """Call Gemini Vision via google.genai SDK with multi-model failover."""
     api_key = os.getenv("GEMINI_API_KEY", "")
     if not api_key:
         return {"type": "error", "notes": "GEMINI_API_KEY not configured"}
@@ -47,49 +66,53 @@ def _call_gemini_vision(image_bytes: bytes) -> dict:
         from google import genai as _genai
         from google.genai import types as _gtypes
         import re as _re
-        client = _genai.Client(api_key=api_key)
         import PIL.Image, io
+
+        client = _genai.Client(api_key=api_key)
         img = PIL.Image.open(io.BytesIO(image_bytes))
-        response = client.models.generate_content(
-            model=_GEMINI_MODEL,
-            contents=[img, _VISION_PROMPT],
-            config=_gtypes.GenerateContentConfig(
-                max_output_tokens=1024,
-                temperature=0.05
-            )
-        )
-        raw = response.text.strip()
-        print(f"[VISION] Gemini raw: {raw[:300]}")
-        clean = raw.strip()
-        if clean.startswith("```"):
-            clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-        try:
-            return json.loads(clean)
-        except json.JSONDecodeError:
-            # Attempt to extract JSON object from partial/truncated response
-            match = _re.search(r'\{[^{}]*"product_name"\s*:\s*"([^"]+)"[^{}]*\}', clean, _re.DOTALL)
-            if match:
-                # Try to reconstruct a minimal valid dict from regex groups
-                pname_match = _re.search(r'"product_name"\s*:\s*"([^"]+)"', clean)
-                brand_match = _re.search(r'"brand"\s*:\s*"([^"]*)"', clean)
-                cat_match = _re.search(r'"category"\s*:\s*"([^"]*)"', clean)
-                conf_match = _re.search(r'"confidence"\s*:\s*"([^"]*)"', clean)
-                barcode_match = _re.search(r'"barcode_value"\s*:\s*"([^"]*)"', clean)
-                return {
-                    "type": "product",
-                    "product_name": pname_match.group(1) if pname_match else clean[:80],
-                    "barcode_value": barcode_match.group(1) if barcode_match else "",
-                    "brand": brand_match.group(1) if brand_match else "",
-                    "category": cat_match.group(1) if cat_match else "Electronics",
-                    "confidence": conf_match.group(1) if conf_match else "Medium",
-                    "notes": ""
-                }
-            return {
-                "type": "product", "product_name": clean[:80], "barcode_value": "",
-                "brand": "", "category": "Unknown", "confidence": "Low", "notes": ""
-            }
+
+        last_err = None
+        for model_name in _CANDIDATE_MODELS:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[img, _VISION_PROMPT],
+                    config=_gtypes.GenerateContentConfig(
+                        max_output_tokens=1024,
+                        temperature=0.05
+                    )
+                )
+                raw = response.text.strip()
+                print(f"[VISION] ({model_name}) raw: {raw[:300]}")
+                clean = raw.strip()
+                if clean.startswith("```"):
+                    clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                try:
+                    return json.loads(clean)
+                except json.JSONDecodeError:
+                    match = _re.search(r'\{[^{}]*"product_name"\s*:\s*"([^"]+)"[^{}]*\}', clean, _re.DOTALL)
+                    pname_match = _re.search(r'"product_name"\s*:\s*"([^"]+)"', clean)
+                    brand_match = _re.search(r'"brand"\s*:\s*"([^"]*)"', clean)
+                    cat_match = _re.search(r'"category"\s*:\s*"([^"]*)"', clean)
+                    conf_match = _re.search(r'"confidence"\s*:\s*"([^"]*)"', clean)
+                    barcode_match = _re.search(r'"barcode_value"\s*:\s*"([^"]*)"', clean)
+                    return {
+                        "type": "product",
+                        "product_name": pname_match.group(1) if pname_match else clean[:80],
+                        "barcode_value": barcode_match.group(1) if barcode_match else "",
+                        "brand": brand_match.group(1) if brand_match else "",
+                        "category": cat_match.group(1) if cat_match else "Electronics",
+                        "confidence": conf_match.group(1) if conf_match else "Medium",
+                        "notes": ""
+                    }
+            except Exception as me:
+                print(f"[VISION] Failover: model {model_name} failed: {me}")
+                last_err = me
+                continue
+
+        return {"type": "error", "notes": str(last_err)}
     except Exception as e:
-        print(f"[VISION] Gemini error: {e}")
+        print(f"[VISION] Gemini client error: {e}")
         return {"type": "error", "notes": str(e)}
 
 
@@ -110,18 +133,50 @@ def download_telegram_photo(file_id: str) -> bytes | None:
 
 
 def _search_odoo(keyword: str = "", barcode: str = "") -> list:
-    """Search product.product by name keyword or barcode field."""
+    """Search product.product by name keyword or barcode field with fuzzy token fallback."""
     try:
         odoo = _get_odoo()
         if barcode:
             domain = ["|", ["barcode", "=", barcode], ["default_code", "=", barcode]]
-        else:
+            res = odoo.search_read(
+                "product.product", domain,
+                fields=["id", "name", "default_code", "barcode", "list_price", "qty_available"],
+                limit=3
+            ) or []
+            if res:
+                return res
+
+        if keyword:
+            # 1. Direct ilike substring search
             domain = ["|", ["name", "ilike", keyword], ["default_code", "ilike", keyword]]
-        return odoo.search_read(
-            "product.product", domain,
-            fields=["id", "name", "default_code", "barcode", "list_price", "qty_available"],
-            limit=3
-        ) or []
+            res = odoo.search_read(
+                "product.product", domain,
+                fields=["id", "name", "default_code", "barcode", "list_price", "qty_available"],
+                limit=3
+            ) or []
+            if res:
+                return res
+
+            # 2. Token overlap fallback across all saleable products
+            all_prods = odoo.search_read(
+                "product.product", [["sale_ok", "=", True]],
+                fields=["id", "name", "default_code", "barcode", "list_price", "qty_available"],
+                limit=100
+            ) or []
+            kw_tokens = set(keyword.lower().replace("-", " ").replace("_", " ").split())
+            scored = []
+            for p in all_prods:
+                p_name = (p.get("name") or "").lower()
+                p_code = (p.get("default_code") or "").lower()
+                p_tokens = set((p_name + " " + p_code).replace("-", " ").replace("_", " ").split())
+                overlap = len(kw_tokens & p_tokens)
+                if overlap > 0:
+                    scored.append((overlap, p))
+            if scored:
+                scored.sort(key=lambda x: x[0], reverse=True)
+                return [x[1] for x in scored[:3]]
+
+        return []
     except Exception as e:
         print(f"[VISION] Odoo search error: {e}")
         return []
@@ -158,19 +213,34 @@ def analyze_product_image(image_bytes: bytes) -> str:
     confidence = v.get("confidence", "Low")
     notes = v.get("notes", "")
 
-    if img_type in ("unknown", "error") or (not product_name and not barcode_val):
+    if img_type == "error":
         return (
-            "Could not identify a product in this image. "
-            "Please send a clearer photo focusing on the product label or barcode."
+            f"Vision error: {notes[:100]}\n"
+            "Please try again or send a different photo."
         )
 
-    # 2. Odoo lookup
+    # Be lenient: if Gemini returned "unknown" but still extracted a product name, use it
+    if img_type == "unknown" and product_name:
+        img_type = "product"
+
+    if not product_name and not barcode_val:
+        return (
+            "Could not identify any product in this photo.\n\n"
+            "Tips:\n"
+            "- Ensure the product name or barcode is clearly visible\n"
+            "- Use good lighting, avoid glare\n"
+            "- Try a closer shot of the product label or box\n"
+            "- You can also type the product name directly (e.g. `Search MacBook Pro`)"
+        )
+
+    # 2. Odoo lookup: try barcode -> product name -> brand
+    products = []
     if barcode_val:
         products = _search_odoo(barcode=barcode_val)
-    else:
+    if not products and product_name:
         products = _search_odoo(keyword=product_name)
-        if not products and brand:
-            products = _search_odoo(keyword=brand)
+    if not products and brand:
+        products = _search_odoo(keyword=brand)
 
     table = _product_table(products)
     icon = "📦" if img_type == "product" else "🔲"
@@ -191,7 +261,7 @@ def analyze_product_image(image_bytes: bytes) -> str:
         )
         next_steps = (
             f"- `Create quotation for {top['name']} for customer [Name]`\n"
-            f"- `Check stock for {top.get('default_code', top['name'])}`\n"
+            f"- `Check stock for {top.get('default_code') or top.get('name')}`\n"
             f"- `Show all {category} products`"
         )
     else:
