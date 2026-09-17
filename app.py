@@ -45,7 +45,7 @@ def _get_webhook_secret() -> str:
 
 @app.get("/")
 def root():
-    return {"service": "SmartShop AI Gateway v3.0", "status": "online", "mcp_ready": _mcp_session is not None}
+    return {"service": "SmartShop AI Gateway v3.2-vision", "status": "online", "mcp_ready": _mcp_session is not None}
 
 
 @app.get("/health")
