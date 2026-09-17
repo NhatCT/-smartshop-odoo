@@ -44,7 +44,7 @@ services:
     runtime: python
     schedule: "*/10 * * * *"
     buildCommand: pip install requests
-    startCommand: python -c "import os,urllib.request; url=os.getenv('RENDER_EXTERNAL_URL','https://smartshop-ai-gateway.onrender.com').rstrip('/')+'/health'; urllib.request.urlopen(url, timeout=10)"
+    startCommand: python -c "import os,urllib.request; url=os.getenv('RENDER_EXTERNAL_URL','https://smartshop-odoo.onrender.com').rstrip('/')+'/health'; urllib.request.urlopen(url, timeout=10)"
     envVars:
       - key: RENDER_EXTERNAL_URL
         fromService:
