@@ -82,7 +82,7 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}"
 # Prefer ADMIN_CHAT_ID, but support legacy TELEGRAM_CHAT_ID
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", os.getenv("TELEGRAM_CHAT_ID", "6553206564"))
-SYSTEM_CMDS = {"/start", "/register", "/verify", "/my_role", "/clear", "/reset", "/help"}
+SYSTEM_CMDS = {"/start", "/register", "/verify", "/bind", "/my_role", "/clear", "/reset", "/help"}
 
 
 async def tg_send(user_id, text, parse_mode="Markdown"):
