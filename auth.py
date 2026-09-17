@@ -57,9 +57,9 @@ def save_bindings(bindings: dict) -> bool:
         return False
 
 
-# ─── Permission (Zero-Trust, đọc LIVE từ Odoo) ───
+# ─── Permission (Zero-Trust, reads LIVE from Odoo) ───
 def fetch_user_context(email: str) -> dict | None:
-    """Đọc res.users + res.groups LIVE từ Odoo mỗi request — không cache."""
+    """Read res.users + res.groups LIVE from Odoo on every request — no caching."""
     clean = email.lower().strip()
     try:
         users = _odoo.search_read("res.users", ["|", ["login", "=ilike", clean], ["email", "=ilike", clean]],
@@ -75,7 +75,7 @@ def fetch_user_context(email: str) -> dict | None:
     if gids:
         try:
             raw = _odoo.search_read("res.groups", [["id", "in", gids]], ["full_name", "display_name", "name"], 100)
-            skip = ["Technical", "Bỏ qua", "Địa chỉ", "Trình chỉnh", "Trang web"]
+            skip = ["Technical", "Skip", "Address", "Editor", "Website"]
             groups = [g.get("full_name") or g.get("display_name") or g.get("name", "")
                       for g in raw if g.get("full_name") or g.get("display_name") or g.get("name")]
             groups = [g for g in groups if not any(k in g for k in skip)]
@@ -89,6 +89,7 @@ def fetch_user_context(email: str) -> dict | None:
     is_inv = is_inv_mgr or any("Tồn kho" in g or "Inventory" in g for g in groups)
     is_acc_mgr = any("Kế toán / Quản trị viên" in g or "Accounting / Administrator" in g for g in groups)
     is_acc = is_acc_mgr or any("Kế toán" in g or "Accounting" in g or "Invoicing" in g for g in groups)
+    # NOTE: the Vietnamese literals above match live Odoo group names (Odoo-side data) and must stay as-is.
 
     tools = {"search_records", "list_products"}
     models = {"product.template", "product.product"}
@@ -129,16 +130,16 @@ def fetch_user_context(email: str) -> dict | None:
 
 
 def check_permission(telegram_id: str) -> dict:
-    """Zero-Trust: binding → Odoo quyền live → allow/deny."""
+    """Zero-Trust: binding → live Odoo permissions → allow/deny."""
     bindings = get_bindings()
     email = bindings.get(str(telegram_id).strip())
     if not email:
-        return {"allowed": False, "reason": f"⛔ Telegram ID `{telegram_id}` chưa liên kết. Gõ `/register email@company.com`"}
+        return {"allowed": False, "reason": f"⛔ Telegram ID `{telegram_id}` is not linked yet. Type `/register email@company.com`"}
     ctx = fetch_user_context(email)
     if not ctx:
-        return {"allowed": False, "reason": f"❌ Không tìm thấy tài khoản Odoo `{email}`."}
+        return {"allowed": False, "reason": f"❌ Odoo account `{email}` not found."}
     if not ctx["is_active_odoo"]:
-        return {"allowed": False, "reason": f"🚨 Tài khoản `{email}` đã bị vô hiệu hóa trên Odoo."}
+        return {"allowed": False, "reason": f"🚨 Account `{email}` has been disabled on Odoo."}
     return {"allowed": True, "email": email, "user_info": ctx, "official_role": ctx["role_category"]}
 
 
@@ -156,53 +157,53 @@ def request_otp(telegram_id, email) -> tuple[bool, str]:
         print(f"[ODOO SEARCH] request_otp email={email} results={len(users)} users={[u.get('login') or u.get('email') for u in users]}")
     except Exception as e:
         print(f"[ODOO SEARCH ERROR] request_otp: {e}")
-        return False, f"❌ Lỗi kết nối Odoo: {e}"
+        return False, f"❌ Odoo connection error: {e}"
     if not users:
-        return False, f"❌ Email '{email}' không tồn tại trong Odoo."
+        return False, f"❌ Email '{email}' does not exist in Odoo."
     if not users[0].get("active", True):
-        return False, f"🚨 Tài khoản '{email}' đã bị vô hiệu hóa."
+        return False, f"🚨 Account '{email}' has been disabled."
     import random
     otp = f"{random.randint(100000, 999999)}"
     _pending_otp[str(telegram_id)] = {"email": email, "otp": otp, "ts": time.time()}
     if email in REQUIRES_ADMIN_APPROVAL:
         _pending_approval[str(telegram_id)] = {"email": email, "ts": time.time()}
-    # Gửi OTP qua n8n
+    # Send OTP via n8n
     url = os.getenv("N8N_OTP_WEBHOOK_URL", "https://odooworkflow.app.n8n.cloud/webhook/send-otp-email")
     try:
         payload = json.dumps({"to_email": email, "otp_code": otp, "employee_name": users[0].get("name", email)}).encode()
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
         urllib.request.urlopen(req, timeout=8)
-        return True, f"✉️ Mã OTP đã gửi tới `{email}`. Gõ `/verify <MÃ_OTP_6_SỐ>`"
+        return True, f"✉️ OTP code sent to `{email}`. Type `/verify <6-DIGIT_OTP>`"
     except Exception as e:
-        return False, f"❌ Không thể gửi OTP: {e}"
+        return False, f"❌ Could not send OTP: {e}"
 
 
 def verify_otp(telegram_id, user_otp) -> tuple[bool, str]:
     sid = str(telegram_id)
     pending = _pending_otp.get(sid)
     if not pending:
-        return False, "❌ Không tìm thấy yêu cầu OTP. Gõ `/register email` trước."
+        return False, "❌ No OTP request found. Type `/register email` first."
     if time.time() - pending["ts"] > OTP_TTL:
         del _pending_otp[sid]
-        return False, "❌ Mã OTP đã hết hạn (5 phút)."
+        return False, "❌ OTP code has expired (5 minutes)."
     if pending["otp"] != user_otp.strip():
-        return False, "❌ Mã OTP không khớp."
+        return False, "❌ OTP code does not match."
     email = pending["email"]
     if sid in _pending_approval:
         del _pending_otp[sid]
-        return False, f"⏳ Tài khoản `{email}` cần Admin phê duyệt trước khi kích hoạt."
+        return False, f"⏳ Account `{email}` needs Admin approval before it can be activated."
     try:
         bindings = get_bindings()
         bindings[sid] = email
         save_bindings(bindings)
     except Exception as e:
-        return False, f"❌ Lỗi lưu binding: {e}"
+        return False, f"❌ Error saving binding: {e}"
     del _pending_otp[sid]
     ctx = fetch_user_context(email) or {}
     return True, (
-        f"✅ XÁC THỰC THÀNH CÔNG!\nTài khoản: `{email}`\n"
-        f"Họ tên: {ctx.get('full_name', email)}\n"
-        f"Vai trò: {ctx.get('role_category', 'viewer').upper()}"
+        f"✅ VERIFICATION SUCCESSFUL!\nAccount: `{email}`\n"
+        f"Full name: {ctx.get('full_name', email)}\n"
+        f"Role: {ctx.get('role_category', 'viewer').upper()}"
     )
 
 
@@ -221,7 +222,7 @@ class RateLimiter:
             while w and w[0] < now - self._window:
                 w.popleft()
             if len(w) >= self._max:
-                return False, {"message": f"⚠️ Quá {self._max} tin/phút. Đợi {int(self._window - (now - w[0])) + 1}s."}
+                return False, {"message": f"⚠️ Exceeded {self._max} messages/min. Wait {int(self._window - (now - w[0])) + 1}s."}
             w.append(now)
             return True, {}
 
@@ -234,7 +235,7 @@ def rate_limit_check(user_id: str) -> tuple[bool, str]:
     return ok, info.get("message", "")
 
 
-# ─── Idempotency (5 phút) ───
+# ─── Idempotency (5 minutes) ───
 _idem: OrderedDict = OrderedDict()
 _idem_lock = threading.Lock()
 SKIP_DEDUP = {"/register", "/verify", "/clear", "/reset", "/my_role", "/start"}
@@ -300,26 +301,26 @@ def send_approval_request(order_name, total, employee_name, manager_chat_id, tel
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     
     text_md = (
-        f"⚠️ *YÊU CẦU PHÊ DUYỆT ĐƠN HÀNG GIÁ TRỊ LỚN*\n\n"
-        f"• Mã đơn: `{order_name}`\n"
-        f"• Nhân viên yêu cầu: *{employee_name}*\n"
-        f"• Tổng giá trị: *{total:,.0f} VNĐ* (> 20.000.000 VNĐ)\n\n"
-        f"👉 Vui lòng chọn hành động bên dưới:"
+        f"⚠️ *HIGH-VALUE ORDER APPROVAL REQUEST*\n\n"
+        f"• Order code: `{order_name}`\n"
+        f"• Requested by: *{employee_name}*\n"
+        f"• Total amount: *{total:,.0f} VND* (> 20,000,000 VND)\n\n"
+        f"👉 Please choose an action below:"
     )
     text_plain = (
-        f"⚠️ YÊU CẦU PHÊ DUYỆT ĐƠN HÀNG GIÁ TRỊ LỚN\n\n"
-        f"• Mã đơn: {order_name}\n"
-        f"• Nhân viên yêu cầu: {employee_name}\n"
-        f"• Tổng giá trị: {total:,.0f} VNĐ (> 20.000.000 VNĐ)\n\n"
-        f"👉 Vui lòng chọn hành động bên dưới:"
+        f"⚠️ HIGH-VALUE ORDER APPROVAL REQUEST\n\n"
+        f"• Order code: {order_name}\n"
+        f"• Requested by: {employee_name}\n"
+        f"• Total amount: {total:,.0f} VND (> 20,000,000 VND)\n\n"
+        f"👉 Please choose an action below:"
     )
-    
+
     # Telegram callback_data must be <= 64 bytes
     reply_markup = {
         "inline_keyboard": [
             [
-                {"text": "✅ Phê duyệt", "callback_data": f"app_{order_name}_{token}"},
-                {"text": "❌ Từ chối", "callback_data": f"rej_{order_name}_{token}"}
+                {"text": "✅ Approve", "callback_data": f"app_{order_name}_{token}"},
+                {"text": "❌ Reject", "callback_data": f"rej_{order_name}_{token}"}
             ]
         ]
     }
