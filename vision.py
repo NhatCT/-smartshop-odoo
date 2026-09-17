@@ -14,7 +14,15 @@ import urllib.request
 
 from odoo import OdooClient
 
-_odoo = OdooClient()
+# Lazy Odoo client - initialized on first search to avoid blocking at import time
+_odoo_client = None
+
+
+def _get_odoo() -> OdooClient:
+    global _odoo_client
+    if _odoo_client is None:
+        _odoo_client = OdooClient()
+    return _odoo_client
 
 # Active Gemini model for this API key (gemini-3.6-flash)
 _GEMINI_MODEL = os.getenv("GEMINI_VISION_MODEL", "gemini-3.6-flash")
@@ -104,11 +112,12 @@ def download_telegram_photo(file_id: str) -> bytes | None:
 def _search_odoo(keyword: str = "", barcode: str = "") -> list:
     """Search product.product by name keyword or barcode field."""
     try:
+        odoo = _get_odoo()
         if barcode:
             domain = ["|", ["barcode", "=", barcode], ["default_code", "=", barcode]]
         else:
             domain = ["|", ["name", "ilike", keyword], ["default_code", "ilike", keyword]]
-        return _odoo.search_read(
+        return odoo.search_read(
             "product.product", domain,
             fields=["id", "name", "default_code", "barcode", "list_price", "qty_available"],
             limit=3
