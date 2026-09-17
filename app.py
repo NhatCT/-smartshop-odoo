@@ -11,13 +11,14 @@ import urllib.request
 
 # Load .env — only set if not already present (do not override existing env vars)
 if os.path.exists(".env"):
-    for line in open(".env", encoding="utf-8"):
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, v = line.split("=", 1)
-            k = k.strip()
-            if k not in os.environ:
-                os.environ[k] = v.strip()
+    with open(".env", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                k = k.strip()
+                if k not in os.environ:
+                    os.environ[k] = v.strip()
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -147,18 +148,22 @@ async def handle_system_cmd(user_id, text):
     print(f"[CMD] user={user_id} cmd={lower}")
     if lower in ("/start", "/help"):
         await tg_send(user_id, (
-            "👋 TRỢ LÝ AI ĐIỀU HÀNH ERP SMARTSHOP\n\n"
-            "• 🔍 Tra cứu sản phẩm & bảng giá\n"
-            "• 📦 Kiểm tra tồn kho thời gian thực\n"
-            "• 📋 Lập báo giá & đơn bán hàng\n"
-            "• 📊 Xem công nợ & báo cáo bán hàng\n\n"
-            "Lệnh hệ thống: /bind /my_role /clear /help"
+            "👋 SMARTSHOP ERP AI EXECUTIVE ASSISTANT (Singapore Regional Hub)\n\n"
+            "• 🔍 Product Catalog & Price Lookup\n"
+            "• 📦 Real-Time Inventory & Stock Check\n"
+            "• 📋 Quotations & Sales Orders Creation\n"
+            "• 📊 Invoicing, AR/AP & Revenue Reports\n\n"
+            "System Commands:\n"
+            "• /bind <email> — Link Telegram account to Odoo user\n"
+            "• /my_role — View current Odoo permissions & role\n"
+            "• /clear — Reset conversation memory\n"
+            "• /help — Show assistance guide"
         ), parse_mode=None)
         return
     if lower.startswith("/register"):
         parts = text.split()
         if len(parts) < 2:
-            await tg_send(user_id, "Cú pháp: /register email@company.com", parse_mode=None)
+            await tg_send(user_id, "Usage: /register email@company.com", parse_mode=None)
             return
         ok, msg = request_otp(user_id, parts[1])
         print(f"[CMD] /register result={ok} msg={msg}")
@@ -167,7 +172,7 @@ async def handle_system_cmd(user_id, text):
     if lower.startswith("/bind"):
         parts = text.split()
         if len(parts) < 2:
-            await tg_send(user_id, "Cú pháp: /bind email@company.com", parse_mode=None)
+            await tg_send(user_id, "Usage: /bind email@company.com", parse_mode=None)
             return
         ok, msg = bind_direct(user_id, parts[1])
         print(f"[CMD] /bind result={ok} msg={msg}")
@@ -176,7 +181,7 @@ async def handle_system_cmd(user_id, text):
     if lower.startswith("/verify"):
         parts = text.split()
         if len(parts) < 2:
-            await tg_send(user_id, "Cú pháp: /verify MÃ_OTP", parse_mode=None)
+            await tg_send(user_id, "Usage: /verify OTP_CODE", parse_mode=None)
             return
         ok, msg = verify_otp(user_id, parts[1])
         print(f"[CMD] /verify result={ok} msg={msg}")
@@ -193,8 +198,8 @@ async def handle_system_cmd(user_id, text):
                 groups = u.get("odoo_groups", [])
                 g_str = "\n".join(f"  • {g}" for g in groups) if groups else "  • (None)"
                 await tg_send(user_id,
-                    f"👤 ODOO ACCOUNT\n• Full name: {u.get('full_name')}\n• Email: {u.get('email')}\n"
-                    f"• Role: {u.get('role_category', 'viewer').upper()}\n\nPermission groups:\n{g_str}",
+                    f"👤 ODOO USER PROFILE\n• Full name: {u.get('full_name')}\n• Email: {u.get('email')}\n"
+                    f"• Role: {u.get('role_category', 'viewer').upper()}\n\nAssigned Permission Groups:\n{g_str}",
                     parse_mode=None)
         except Exception as e:
             print(f"[CMD] /my_role error={e}")
@@ -203,7 +208,7 @@ async def handle_system_cmd(user_id, text):
     if lower in ("/clear", "/reset"):
         ai.clear_memory(user_id)
         ai.clear_draft(user_id)
-        await tg_send(user_id, "🧹 Conversation memory cleared!", parse_mode=None)
+        await tg_send(user_id, "🧹 Conversation memory cleared successfully!", parse_mode=None)
         return
 
 
