@@ -9,14 +9,126 @@ import anthropic
 from auth import send_approval_request
 from odoo import OdooClient
 
+class _Text:
+    def __init__(self, text):
+        self.type = "text"
+        self.text = text
+
+
+class _ToolUse:
+    def __init__(self, name, tool_id, tool_input):
+        self.type = "tool_use"
+        self.name = name
+        self.id = tool_id
+        self.input = tool_input
+
+
+class _AnthropicResponse:
+    def __init__(self, content):
+        self.content = content
+
+
+class DeepSeekAdapter:
+    """Wraps OpenAI SDK (DeepSeek API or Gemini) into the messages.create interface."""
+    def __init__(self, api_key: str, base_url: str = "https://api.deepseek.com"):
+        from openai import OpenAI
+        self._client = OpenAI(api_key=api_key, base_url=base_url)
+        self.messages = self._Messages(self._client)
+
+    class _Messages:
+        def __init__(self, client):
+            self._client = client
+
+        def create(self, model, max_tokens=1500, system="", messages=None, tools=None):
+            openai_msgs = []
+            if system:
+                openai_msgs.append({"role": "system", "content": system})
+            for m in (messages or []):
+                role = m.get("role", "user")
+                content = m.get("content", "")
+                if isinstance(content, list):
+                    text_parts = []
+                    for part in content:
+                        if isinstance(part, dict) and part.get("type") == "tool_result":
+                            text_parts.append(str(part.get("content")))
+                        elif hasattr(part, "text"):
+                            text_parts.append(part.text)
+                        elif isinstance(part, dict) and "text" in part:
+                            text_parts.append(part["text"])
+                        else:
+                            text_parts.append(str(part))
+                    openai_msgs.append({"role": role, "content": "\n".join(text_parts)})
+                else:
+                    openai_msgs.append({"role": role, "content": str(content)})
+
+            openai_tools = None
+            if tools and not isinstance(tools, type) and hasattr(tools, "__iter__"):
+                openai_tools = []
+                for t in tools:
+                    if isinstance(t, dict) and "name" in t:
+                        openai_tools.append({
+                            "type": "function",
+                            "function": {
+                                "name": t["name"],
+                                "description": t.get("description", ""),
+                                "parameters": t.get("input_schema", {"type": "object", "properties": {}})
+                            }
+                        })
+
+            resp = self._client.chat.completions.create(
+                model=model,
+                messages=openai_msgs,
+                tools=openai_tools if openai_tools else None,
+                max_tokens=max_tokens
+            )
+            choice = resp.choices[0].message
+            content_blocks = []
+            if choice.content:
+                content_blocks.append(_Text(choice.content))
+            if choice.tool_calls:
+                for tc in choice.tool_calls:
+                    try:
+                        args = json.loads(tc.function.arguments or "{}")
+                    except Exception:
+                        args = {}
+                    content_blocks.append(_ToolUse(tc.function.name, tc.id, args))
+            return _AnthropicResponse(content_blocks)
+
+
 _client = None
 def get_client():
     global _client
-    if _client is None:
-        _client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    if _client is not None:
+        return _client
+
+    deepseek_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    provider = os.getenv("LLM_PROVIDER", "").strip().lower()
+
+    if deepseek_key or provider == "deepseek":
+        base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+        _client = DeepSeekAdapter(api_key=deepseek_key, base_url=base_url)
+        return _client
+
+    # Fallback to Gemini if configured
+    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if provider == "gemini" or (gemini_key and not os.getenv("ANTHROPIC_API_KEY")):
+        _client = DeepSeekAdapter(api_key=gemini_key, base_url="https://generativelanguage.googleapis.com/v1beta/openai/")
+        return _client
+
+    # Otherwise Anthropic Claude
+    _client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     return _client
 
-MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
+
+def get_model_name():
+    if os.getenv("DEEPSEEK_API_KEY") or os.getenv("LLM_PROVIDER", "").lower() == "deepseek":
+        return os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    if os.getenv("GEMINI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"):
+        return os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+    return os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
+
+
+MODEL = get_model_name()
 MAX_TURNS = 2
 DISABLE_APPROVAL_GATE = os.getenv("DISABLE_APPROVAL_GATE", "0").lower() in ("1", "true", "yes")
 USE_HERMES_ENGINE = os.getenv("USE_HERMES_ENGINE", "0").lower() in ("1", "true", "yes")
@@ -547,4 +659,4 @@ async def handle_message(user_id: str, text: str, user_info: dict, mcp_session) 
 
     except Exception as e:
         print(f"[AUDIT] user={user_id} role={role} tools={tools_log} status=ERROR: {e}")
-        return f"❌ Claude API error: {e}"
+        return f"❌ AI API error: {e}"
