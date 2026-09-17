@@ -6,6 +6,7 @@ import json
 import os
 import secrets
 import smtplib
+import socket
 import threading
 import time
 import urllib.request
@@ -151,6 +152,16 @@ _pending_approval: dict[str, dict] = {}
 OTP_TTL = 300
 
 
+def _getaddrinfo_ipv4_only(*args, **kwargs):
+    """Some hosts (e.g. Render) have no outbound IPv6 route, which makes the
+    stdlib pick an unreachable AAAA record and fail with 'Network is
+    unreachable'. Force IPv4 resolution for the duration of the SMTP call."""
+    return _orig_getaddrinfo(args[0], args[1], socket.AF_INET, *args[2:], **kwargs)
+
+
+_orig_getaddrinfo = socket.getaddrinfo
+
+
 def send_email(to_email: str, subject: str, body: str) -> tuple[bool, str]:
     """Send a plain-text email via SMTP (Gmail by default)."""
     host = os.getenv("SMTP_HOST", "smtp.gmail.com")
@@ -164,10 +175,14 @@ def send_email(to_email: str, subject: str, body: str) -> tuple[bool, str]:
         msg["Subject"] = subject
         msg["From"] = user
         msg["To"] = to_email
-        with smtplib.SMTP(host, port, timeout=10) as server:
-            server.starttls()
-            server.login(user, password)
-            server.sendmail(user, [to_email], msg.as_string())
+        socket.getaddrinfo = _getaddrinfo_ipv4_only
+        try:
+            with smtplib.SMTP(host, port, timeout=10) as server:
+                server.starttls()
+                server.login(user, password)
+                server.sendmail(user, [to_email], msg.as_string())
+        finally:
+            socket.getaddrinfo = _orig_getaddrinfo
         return True, "sent"
     except Exception as e:
         return False, str(e)
