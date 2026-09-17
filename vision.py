@@ -116,6 +116,69 @@ def _call_gemini_vision(image_bytes: bytes) -> dict:
         return {"type": "error", "notes": str(e)}
 
 
+def _call_deepseek_vision(image_bytes: bytes) -> dict:
+    """Call DeepSeek V4 (deepseek-flash) via LiteLLM gateway with OpenAI format."""
+    api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    if not api_key:
+        return {"type": "error", "notes": "DEEPSEEK_API_KEY not configured"}
+    base_url = os.getenv("DEEPSEEK_BASE_URL", "").strip()
+    if not base_url or "api.deepseek.com" in base_url:
+        base_url = "https://litellm-production-7402.up.railway.app/v1"
+    model = os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
+
+    try:
+        from openai import OpenAI
+        import re as _re
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": _VISION_PROMPT},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
+                    ]
+                }
+            ],
+            max_tokens=800,
+            temperature=0.05
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        print(f"[VISION] (DeepSeek V4 - {model}) raw: {raw[:300]}")
+        clean = raw
+        if "```" in clean:
+            clean = clean.split("```", 1)[-1].rsplit("```", 1)[0]
+            if clean.lower().startswith("json"):
+                clean = clean[4:].strip()
+        try:
+            return json.loads(clean)
+        except json.JSONDecodeError:
+            match = _re.search(r'\{[^{}]*"product_name"\s*:\s*"([^"]+)"[^{}]*\}', clean, _re.DOTALL)
+            pname_match = _re.search(r'"product_name"\s*:\s*"([^"]+)"', clean)
+            brand_match = _re.search(r'"brand"\s*:\s*"([^"]*)"', clean)
+            cat_match = _re.search(r'"category"\s*:\s*"([^"]*)"', clean)
+            conf_match = _re.search(r'"confidence"\s*:\s*"([^"]*)"', clean)
+            barcode_match = _re.search(r'"(?:barcode_value|barcode_number)"\s*:\s*"([^"]*)"', clean)
+            if pname_match:
+                return {
+                    "type": "product",
+                    "product_name": pname_match.group(1),
+                    "barcode_value": barcode_match.group(1) if barcode_match else "",
+                    "brand": brand_match.group(1) if brand_match else "",
+                    "category": cat_match.group(1) if cat_match else "Electronics",
+                    "confidence": conf_match.group(1) if conf_match else "High",
+                    "notes": ""
+                }
+            return {"type": "error", "notes": f"Could not parse: {clean[:100]}"}
+    except Exception as e:
+        print(f"[VISION] DeepSeek V4 error: {e}")
+        return {"type": "error", "notes": str(e)}
+
+
+
 def download_telegram_photo(file_id: str) -> bytes | None:
     """Download highest-res Telegram photo by file_id. Returns raw bytes."""
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -203,8 +266,14 @@ def analyze_product_image(image_bytes: bytes) -> str:
     Full pipeline: Gemini Vision -> Odoo lookup -> 3-section business response.
     Called by app.py when a user sends a photo to Telegram.
     """
-    # 1. Vision analysis
-    v = _call_gemini_vision(image_bytes)
+    # 1. Vision analysis: DeepSeek V4 (deepseek-flash) primary, Gemini failover
+    v = _call_deepseek_vision(image_bytes)
+    if v.get("type") == "error" or (not v.get("product_name") and not v.get("barcode_value")):
+        print("[VISION] DeepSeek V4 fallback -> attempting Gemini Vision...")
+        v_gemini = _call_gemini_vision(image_bytes)
+        if v_gemini.get("type") != "error" and (v_gemini.get("product_name") or v_gemini.get("barcode_value")):
+            v = v_gemini
+
     img_type = v.get("type", "unknown")
     product_name = v.get("product_name", "")
     barcode_val = v.get("barcode_value", "")
