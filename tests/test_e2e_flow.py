@@ -186,7 +186,7 @@ class E2EFlowTest(unittest.TestCase):
         with patch("app.tg_send", new_callable=AsyncMock) as mock_send:
             asyncio.run(handle_system_cmd("123", "/register"))
             mock_send.assert_called_once()
-            self.assertTrue(any(word in mock_send.call_args[0][1].lower() for word in ["cu phap", "usage"]))
+            self.assertTrue(any(word in mock_send.call_args[0][1].lower() for word in ["cú pháp", "cu phap", "usage"]))
 
         # Test /register có email
         with patch("app.request_otp", return_value=(True, "OTP sent")) as mock_otp, \
