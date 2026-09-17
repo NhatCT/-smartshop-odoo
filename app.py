@@ -9,7 +9,7 @@ import sys
 import threading
 import urllib.request
 
-# Load .env — chỉ set nếu chưa tồn tại (không override env đã có sẵn)
+# Load .env — only set if not already present (do not override existing env vars)
 if os.path.exists(".env"):
     for line in open(".env", encoding="utf-8"):
         line = line.strip()
@@ -37,7 +37,7 @@ _mcp_session = None
 
 
 def _get_webhook_secret() -> str:
-    """Đọc secret mỗi lần gọi — hỗ trợ test override env var."""
+    """Read the secret on every call — supports test overrides via env var."""
     return os.getenv("N8N_APPROVAL_WEBHOOK_SECRET", "")
 
 
@@ -124,7 +124,7 @@ async def handle_callback(callback, message_handler):
         order_name = parts[1] if len(parts) == 3 else "_".join(parts[1:-1])
         token = parts[-1]
         if not verify_approval_token(order_name, user_id, token):
-            await tg_send(user_id, "Token khong hop le.", parse_mode=None)
+            await tg_send(user_id, "Invalid token.", parse_mode=None)
             return
         if action == "approve":
             _, msg = ai.approve_order(order_name, telegram_id=user_id)
@@ -136,9 +136,9 @@ async def handle_callback(callback, message_handler):
     # Other callbacks → delegate to AI
     text = data
     if data.startswith("action:draft_order:"):
-        text = f"Tao don hang nhap cho san pham so {data.split(':')[-1]}"
+        text = f"Create a purchase order for product #{data.split(':')[-1]}"
     elif data.startswith("action:check_stock:"):
-        text = f"Kiem tra ton kho san pham so {data.split(':')[-1]}"
+        text = f"Check stock for product #{data.split(':')[-1]}"
     await message_handler(user_id, text)
 
 
@@ -148,15 +148,15 @@ async def handle_system_cmd(user_id, text):
     if lower in ("/start", "/help"):
         await tg_send(user_id, (
             "👋 SMARTSHOP AI ASSISTANT\n\n"
-            "• 🔍 Tra cứu sản phẩm & giá\n• 📦 Kiểm tra tồn kho\n"
-            "• 📋 Tạo báo giá & đơn hàng\n• 📊 Xem công nợ\n\n"
-            "Lệnh: /register /verify /my_role /clear"
+            "• 🔍 Look up products & prices\n• 📦 Check stock\n"
+            "• 📋 Create quotes & orders\n• 📊 View outstanding balances\n\n"
+            "Commands: /register /verify /my_role /clear"
         ), parse_mode=None)
         return
     if lower.startswith("/register"):
         parts = text.split()
         if len(parts) < 2:
-            await tg_send(user_id, "Cu phap: /register email@company.com", parse_mode=None)
+            await tg_send(user_id, "Usage: /register email@company.com", parse_mode=None)
             return
         ok, msg = request_otp(user_id, parts[1])
         print(f"[CMD] /register result={ok} msg={msg}")
@@ -165,7 +165,7 @@ async def handle_system_cmd(user_id, text):
     if lower.startswith("/verify"):
         parts = text.split()
         if len(parts) < 2:
-            await tg_send(user_id, "Cu phap: /verify MA_OTP", parse_mode=None)
+            await tg_send(user_id, "Usage: /verify OTP_CODE", parse_mode=None)
             return
         ok, msg = verify_otp(user_id, parts[1])
         print(f"[CMD] /verify result={ok} msg={msg}")
@@ -180,19 +180,19 @@ async def handle_system_cmd(user_id, text):
             else:
                 u = auth["user_info"]
                 groups = u.get("odoo_groups", [])
-                g_str = "\n".join(f"  • {g}" for g in groups) if groups else "  • (Khong co)"
+                g_str = "\n".join(f"  • {g}" for g in groups) if groups else "  • (None)"
                 await tg_send(user_id,
-                    f"👤 TAI KHOAN ODOO\n• Ho ten: {u.get('full_name')}\n• Email: {u.get('email')}\n"
-                    f"• Vai tro: {u.get('role_category', 'viewer').upper()}\n\nNhom quyen:\n{g_str}",
+                    f"👤 ODOO ACCOUNT\n• Full name: {u.get('full_name')}\n• Email: {u.get('email')}\n"
+                    f"• Role: {u.get('role_category', 'viewer').upper()}\n\nPermission groups:\n{g_str}",
                     parse_mode=None)
         except Exception as e:
             print(f"[CMD] /my_role error={e}")
-            await tg_send(user_id, f"❌ Không thể kiểm tra quyền: {str(e)[:150]}", parse_mode=None)
+            await tg_send(user_id, f"❌ Could not check permissions: {str(e)[:150]}", parse_mode=None)
         return
     if lower in ("/clear", "/reset"):
         ai.clear_memory(user_id)
         ai.clear_draft(user_id)
-        await tg_send(user_id, "🧹 Da xoa bo nho hoi thoai!", parse_mode=None)
+        await tg_send(user_id, "🧹 Conversation memory cleared!", parse_mode=None)
         return
 
 
@@ -204,7 +204,7 @@ async def message_handler(user_id: str, text: str):
     user_info = auth["user_info"]
 
     if _mcp_session is None:
-        return "⚠️ MCP session chua san sang."
+        return "⚠️ MCP session not ready yet."
     return await ai.handle_message(user_id, text, user_info, _mcp_session)
 
 
@@ -258,7 +258,7 @@ async def telegram_loop():
                                 await handle_system_cmd(uid, text)
                             except Exception as ex:
                                 print(f"[CMD] ERROR user={uid} cmd={text[:50]}: {ex}")
-                                await tg_send(uid, f"❌ Lỗi xử lý lệnh: {str(ex)[:150]}", parse_mode=None)
+                                await tg_send(uid, f"❌ Error processing command: {str(ex)[:150]}", parse_mode=None)
                             continue
                         # Rate limit
                         ok, rate_msg = rate_limit_check(uid)
@@ -277,7 +277,7 @@ async def telegram_loop():
                                 await tg_send(uid, resp)
                                 idempotency_store(uid, text, resp)
                         except Exception as ex:
-                            await tg_send(uid, f"❌ Loi: {str(ex)[:150]}", parse_mode=None)
+                            await tg_send(uid, f"❌ Error: {str(ex)[:150]}", parse_mode=None)
                     await asyncio.sleep(1)
                 except Exception as e:
                     print(f"⚠️ [POLL ERROR]: {e}")

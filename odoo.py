@@ -1,4 +1,4 @@
-"""OdooClient — Kết nối Odoo 19 SaaS qua OdooRPC, thread-safe."""
+"""OdooClient — Connects to Odoo 19 SaaS via OdooRPC, thread-safe."""
 
 import os
 import threading
