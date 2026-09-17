@@ -105,7 +105,7 @@ def get_client():
     provider = os.getenv("LLM_PROVIDER", "").strip().lower()
 
     if deepseek_key or provider == "deepseek":
-        base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+        base_url = os.getenv("DEEPSEEK_BASE_URL", "https://litellm-production-7402.up.railway.app/v1")
         _client = DeepSeekAdapter(api_key=deepseek_key, base_url=base_url)
         return _client
 
