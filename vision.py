@@ -227,13 +227,22 @@ def _search_odoo(keyword: str = "", barcode: str = "") -> list:
                 limit=100
             ) or []
             kw_tokens = set(keyword.lower().replace("-", " ").replace("_", " ").split())
+            kw_versions = {t for t in kw_tokens if t.isdigit() and len(t) <= 2}
             scored = []
             for p in all_prods:
                 p_name = (p.get("name") or "").lower()
                 p_code = (p.get("default_code") or "").lower()
+                cand_tokens = set(p_name.replace("-", " ").replace("_", " ").split())
                 p_tokens = set((p_name + " " + p_code).replace("-", " ").replace("_", " ").split())
+                cand_versions = {t for t in cand_tokens if t.isdigit() and len(t) <= 2}
+
+                # Do not match if model/version digits conflict (e.g. 16 vs 15)
+                if kw_versions and cand_versions and kw_versions != cand_versions:
+                    continue
+
                 overlap = len(kw_tokens & p_tokens)
-                if overlap > 0:
+                ratio = overlap / len(cand_tokens) if cand_tokens else 0
+                if overlap >= 2 and ratio >= 0.5:
                     scored.append((overlap, p))
             if scored:
                 scored.sort(key=lambda x: x[0], reverse=True)
