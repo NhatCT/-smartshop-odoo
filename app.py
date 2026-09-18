@@ -280,7 +280,7 @@ async def telegram_loop():
                             # Pick highest resolution photo
                             best = max(photos, key=lambda p: p.get("file_size", 0))
                             file_id = best["file_id"]
-                            await tg_send(uid, "🔍 Analyzing image with Gemini Vision...", parse_mode=None)
+                            await tg_send(uid, "🔍 Analyzing image with DeepSeek V4 Vision...", parse_mode=None)
                             try:
                                 img_bytes = await asyncio.to_thread(
                                     _vision.download_telegram_photo, file_id)

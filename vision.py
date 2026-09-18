@@ -326,7 +326,7 @@ def analyze_product_image(image_bytes: bytes) -> str:
             f"Odoo Match: **{top['name']}** "
             f"(SKU: `{top.get('default_code') or 'N/A'}`)\n"
             f"Stock: **{stock_str}** | Price: **{price:,.0f} VND** | "
-            f"Vision Confidence: {confidence}"
+            f"AI Engine: **DeepSeek V4** (Confidence: {confidence})"
         )
         next_steps = (
             f"- `Create quotation for {top['name']} for customer [Name]`\n"
@@ -336,7 +336,7 @@ def analyze_product_image(image_bytes: bytes) -> str:
     else:
         conclusion = (
             f"{icon} Identified: **{product_name}** ({brand}) - {category}\n"
-            f"Vision Confidence: {confidence}\n"
+            f"AI Engine: **DeepSeek V4** (Confidence: {confidence})\n"
             f"No matching product found in Odoo. Notes: {notes}"
         )
         next_steps = (
