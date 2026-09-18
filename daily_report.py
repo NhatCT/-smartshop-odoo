@@ -5,7 +5,6 @@ import smtplib
 from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import google.generativeai as genai
 
 # Nạp .env nếu chạy ở môi trường local
 if os.path.exists(".env"):
@@ -55,22 +54,21 @@ def get_telegram_note():
         log_msg(f"Lỗi lấy note Telegram: {e}")
     return "Không có note bổ sung."
 
-# 3. Dùng Gemini API sinh nội dung báo cáo chuẩn HTML
+# 3. Dùng DeepSeek API sinh nội dung báo cáo chuẩn HTML
 def generate_email_body(commits, tg_note):
-    api_key = os.getenv('GEMINI_API_KEY')
+    api_key = os.getenv('DEEPSEEK_API_KEY')
+    base_url = os.getenv('DEEPSEEK_BASE_URL', 'https://litellm-production-7402.up.railway.app/v1')
     if not api_key:
-        log_msg("Cảnh báo: GEMINI_API_KEY chưa được thiết lập.")
+        log_msg("Cảnh báo: DEEPSEEK_API_KEY chưa được thiết lập.")
         return f"<p>Gửi anh Anthony,<br><br>Em xin gửi báo cáo tiến độ:<br>Commits: {commits}<br>Note: {tg_note}</p>"
 
-    genai.configure(api_key=api_key)
-    
     prompt = f"""
     Bạn là trợ lý viết email báo cáo công việc hàng ngày cho Nguyễn Thành Nhật gửi cho anh Anthony (anthony@technext.asia).
     Tên dự án: SmartShop Odoo 19 AI Gateway
     
     Dữ liệu công việc thu thập hôm nay:
     - Commits trên GitHub: {commits}
-    - Ghi chú từ Telegram (Antigravity/Gemini/Odoo): {tg_note}
+    - Ghi chú từ Telegram (Antigravity/DeepSeek/Odoo): {tg_note}
     
     Hãy viết nội dung Email bằng TIẾNG VIỆT, sử dụng định dạng HTML (thẻ <p>, <ul>, <li>, <strong>) chính xác theo mẫu sau:
 
@@ -95,18 +93,21 @@ def generate_email_body(commits, tg_note):
     LƯU Ý: Chỉ trả về nội dung HTML, không kèm các câu dẫn hay ký tự markdown ```html.
     """
     
-    model_names = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash']
-    html_text = ""
-    for m in model_names:
-        try:
-            model = genai.GenerativeModel(m)
-            response = model.generate_content(prompt)
-            if response and response.text:
-                html_text = response.text.replace("```html", "").replace("```", "").strip()
-                log_msg(f"✅ Đã tạo nội dung báo cáo thành công từ model: {m}")
-                break
-        except Exception as ex:
-            log_msg(f"⚠️ Thử model {m} chưa thành công: {ex}")
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        model_name = os.getenv('DEEPSEEK_MODEL', 'deepseek-flash')
+        res = client.chat.completions.create(
+            model=model_name,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3
+        )
+        html_text = (res.choices[0].message.content or "").replace("```html", "").replace("```", "").strip()
+        log_msg(f"✅ Đã tạo nội dung báo cáo thành công từ model DeepSeek: {model_name}")
+        return html_text
+    except Exception as ex:
+        log_msg(f"⚠️ Lỗi sinh báo cáo từ DeepSeek: {ex}")
+        return f"<p>Gửi anh Anthony,<br><br>Em xin gửi báo cáo tiến độ:<br>Commits: {commits}<br>Note: {tg_note}</p>"
 
     if not html_text:
         log_msg("Sử dụng nội dung báo cáo HTML dự phòng.")
