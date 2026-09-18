@@ -1,10 +1,8 @@
 """vision.py - SmartShop Computer Vision Module.
 
 Identifies products / reads barcodes from Telegram photos using
-Gemini 2.0 Flash Vision (GEMINI_API_KEY in .env), then looks up
+DeepSeek V4 Vision (deepseek-flash via LiteLLM gateway), then looks up
 Odoo catalog for stock & price data.
-
-Zero extra packages needed - uses stdlib urllib + Pillow (already installed).
 """
 
 import base64
@@ -13,7 +11,7 @@ import os
 import urllib.request
 
 # Ensure .env is loaded
-if os.path.exists(".env") and not os.getenv("GEMINI_API_KEY"):
+if os.path.exists(".env") and not os.getenv("DEEPSEEK_API_KEY"):
     with open(".env", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -35,13 +33,6 @@ def _get_odoo() -> OdooClient:
         _odoo_client = OdooClient()
     return _odoo_client
 
-# Candidate Gemini models for vision in priority order
-_CANDIDATE_MODELS = [
-    os.getenv("GEMINI_VISION_MODEL", "gemini-3.8-flash"),
-    "gemini-flash-latest",
-    "gemini-3.5-flash-lite",
-    "gemini-3.6-flash",
-]
 
 _VISION_PROMPT = (
     "You are a retail product recognition AI for a Singapore electronics store. "
@@ -55,65 +46,6 @@ _VISION_PROMPT = (
     "IMPORTANT: Always make your best guess for product_name. "
     "Only set type to \"unknown\" if the image contains NO product at all (e.g., a person, landscape, document)."
 )
-
-
-def _call_gemini_vision(image_bytes: bytes) -> dict:
-    """Call Gemini Vision via google.genai SDK with multi-model failover."""
-    api_key = os.getenv("GEMINI_API_KEY", "")
-    if not api_key:
-        return {"type": "error", "notes": "GEMINI_API_KEY not configured"}
-    try:
-        from google import genai as _genai
-        from google.genai import types as _gtypes
-        import re as _re
-        import PIL.Image, io
-
-        client = _genai.Client(api_key=api_key)
-        img = PIL.Image.open(io.BytesIO(image_bytes))
-
-        last_err = None
-        for model_name in _CANDIDATE_MODELS:
-            try:
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=[img, _VISION_PROMPT],
-                    config=_gtypes.GenerateContentConfig(
-                        max_output_tokens=1024,
-                        temperature=0.05
-                    )
-                )
-                raw = response.text.strip()
-                print(f"[VISION] ({model_name}) raw: {raw[:300]}")
-                clean = raw.strip()
-                if clean.startswith("```"):
-                    clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-                try:
-                    return json.loads(clean)
-                except json.JSONDecodeError:
-                    match = _re.search(r'\{[^{}]*"product_name"\s*:\s*"([^"]+)"[^{}]*\}', clean, _re.DOTALL)
-                    pname_match = _re.search(r'"product_name"\s*:\s*"([^"]+)"', clean)
-                    brand_match = _re.search(r'"brand"\s*:\s*"([^"]*)"', clean)
-                    cat_match = _re.search(r'"category"\s*:\s*"([^"]*)"', clean)
-                    conf_match = _re.search(r'"confidence"\s*:\s*"([^"]*)"', clean)
-                    barcode_match = _re.search(r'"barcode_value"\s*:\s*"([^"]*)"', clean)
-                    return {
-                        "type": "product",
-                        "product_name": pname_match.group(1) if pname_match else clean[:80],
-                        "barcode_value": barcode_match.group(1) if barcode_match else "",
-                        "brand": brand_match.group(1) if brand_match else "",
-                        "category": cat_match.group(1) if cat_match else "Electronics",
-                        "confidence": conf_match.group(1) if conf_match else "Medium",
-                        "notes": ""
-                    }
-            except Exception as me:
-                print(f"[VISION] Failover: model {model_name} failed: {me}")
-                last_err = me
-                continue
-
-        return {"type": "error", "notes": str(last_err)}
-    except Exception as e:
-        print(f"[VISION] Gemini client error: {e}")
-        return {"type": "error", "notes": str(e)}
 
 
 def _call_deepseek_vision(image_bytes: bytes) -> dict:
@@ -272,17 +204,11 @@ def _product_table(products: list) -> str:
 
 def analyze_product_image(image_bytes: bytes) -> str:
     """
-    Full pipeline: Gemini Vision -> Odoo lookup -> 3-section business response.
+    Full pipeline: DeepSeek V4 Vision -> Odoo lookup -> 3-section business response.
     Called by app.py when a user sends a photo to Telegram.
     """
-    # 1. Vision analysis: DeepSeek V4 (deepseek-flash) primary, Gemini failover
+    # 1. Vision analysis: DeepSeek V4 (deepseek-flash via LiteLLM gateway)
     v = _call_deepseek_vision(image_bytes)
-    if v.get("type") == "error" or (not v.get("product_name") and not v.get("barcode_value")):
-        print("[VISION] DeepSeek V4 fallback -> attempting Gemini Vision...")
-        v_gemini = _call_gemini_vision(image_bytes)
-        if v_gemini.get("type") != "error" and (v_gemini.get("product_name") or v_gemini.get("barcode_value")):
-            v = v_gemini
-
     img_type = v.get("type", "unknown")
     product_name = v.get("product_name", "")
     barcode_val = v.get("barcode_value", "")
@@ -297,7 +223,7 @@ def analyze_product_image(image_bytes: bytes) -> str:
             "Please try again or send a different photo."
         )
 
-    # Be lenient: if Gemini returned "unknown" but still extracted a product name, use it
+    # Be lenient: if DeepSeek returned "unknown" but still extracted a product name, use it
     if img_type == "unknown" and product_name:
         img_type = "product"
 

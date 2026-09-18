@@ -6,5 +6,5 @@ anthropic>=0.20.0
 mcp>=1.0.0
 hermes-agent
 openai>=1.0.0
-google-genai
 pillow
+
