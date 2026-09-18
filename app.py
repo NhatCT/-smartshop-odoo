@@ -30,6 +30,7 @@ import uvicorn
 
 import ai
 import vision as _vision
+import voice as _voice
 from auth import (check_permission, request_otp, verify_otp, bind_direct, rate_limit_check,
                   idempotency_check, idempotency_store, verify_approval_token)
 
@@ -294,6 +295,35 @@ async def telegram_loop():
                                 print(f"[VISION] Error: {ve}")
                                 await tg_send(uid, f"❌ Vision error: {str(ve)[:150]}", parse_mode=None)
                             continue
+
+                        # ─── Voice-to-Order: handle voice / audio messages ───
+                        voice_msg = msg.get("voice") or msg.get("audio")
+                        if uid and voice_msg:
+                            perm = check_permission(uid)
+                            if not perm["allowed"]:
+                                await tg_send(uid, perm["reason"], parse_mode=None)
+                                continue
+                            file_id = voice_msg.get("file_id")
+                            mime = voice_msg.get("mime_type", "audio/ogg")
+                            ext = "mp3" if "mp3" in mime or "mpeg" in mime else "oga"
+                            await tg_send(uid, "🎤 Đang nghe và chuyển đổi giọng nói...", parse_mode=None)
+                            try:
+                                audio_bytes = await asyncio.to_thread(_voice.download_telegram_audio, file_id)
+                                if audio_bytes:
+                                    transcribed = await asyncio.to_thread(_voice.transcribe_audio, audio_bytes, ext)
+                                    if transcribed:
+                                        await tg_send(uid, f"🎙️ *Giọng nói đã nhận:*\n_{transcribed}_")
+                                        text = transcribed
+                                    else:
+                                        await tg_send(uid, "⚠️ Không thể nhận diện rõ giọng nói. Vui lòng nói to và rõ hơn hoặc gõ văn bản.", parse_mode=None)
+                                        continue
+                                else:
+                                    await tg_send(uid, "❌ Không thể tải file âm thanh. Vui lòng thử lại.", parse_mode=None)
+                                    continue
+                            except Exception as ae:
+                                print(f"[VOICE] Error: {ae}")
+                                await tg_send(uid, f"❌ Lỗi xử lý âm thanh: {str(ae)[:150]}", parse_mode=None)
+                                continue
 
                         if not uid or not text:
                             continue
