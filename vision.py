@@ -172,6 +172,13 @@ def _search_odoo(keyword: str = "", barcode: str = "") -> list:
                 if kw_versions and cand_versions and kw_versions != cand_versions:
                     continue
 
+                # Do not match if modifier suffixes conflict (e.g. Pro vs Pro Max, Plus, Ultra, Mini)
+                model_mods = {"max", "plus", "ultra", "mini", "lite", "pro", "se", "fe", "air"}
+                kw_mods = kw_tokens & model_mods
+                cand_mods = cand_tokens & model_mods
+                if kw_mods != cand_mods:
+                    continue
+
                 overlap = len(kw_tokens & p_tokens)
                 ratio = overlap / len(cand_tokens) if cand_tokens else 0
                 if overlap >= 2 and ratio >= 0.5:
