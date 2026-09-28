@@ -57,7 +57,7 @@ def get_telegram_note():
 # 3. Dùng DeepSeek API sinh nội dung báo cáo chuẩn HTML
 def generate_email_body(commits, tg_note):
     api_key = os.getenv('DEEPSEEK_API_KEY')
-    base_url = os.getenv('DEEPSEEK_BASE_URL', 'https://litellm-production-7402.up.railway.app/v1')
+    base_url = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com')
     if not api_key:
         log_msg("Cảnh báo: DEEPSEEK_API_KEY chưa được thiết lập.")
         return f"<p>Gửi anh Anthony,<br><br>Em xin gửi báo cáo tiến độ:<br>Commits: {commits}<br>Note: {tg_note}</p>"
@@ -96,7 +96,7 @@ def generate_email_body(commits, tg_note):
     try:
         from openai import OpenAI
         client = OpenAI(api_key=api_key, base_url=base_url)
-        model_name = os.getenv('DEEPSEEK_MODEL', 'deepseek-flash')
+        model_name = os.getenv('DEEPSEEK_MODEL', 'deepseek-chat')
         res = client.chat.completions.create(
             model=model_name,
             messages=[{"role": "user", "content": prompt}],

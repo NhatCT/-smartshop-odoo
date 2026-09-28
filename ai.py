@@ -116,9 +116,7 @@ def get_client():
     provider = os.getenv("LLM_PROVIDER", "").strip().lower()
 
     if deepseek_key or provider == "deepseek":
-        base_url = os.getenv("DEEPSEEK_BASE_URL", "").strip()
-        if not base_url or "api.deepseek.com" in base_url:
-            base_url = "https://litellm-production-7402.up.railway.app/v1"
+        base_url = os.getenv("DEEPSEEK_BASE_URL", "").strip() or "https://api.deepseek.com"
         _client = DeepSeekAdapter(api_key=deepseek_key, base_url=base_url)
         return _client
 
@@ -135,7 +133,7 @@ def get_client():
 
 def get_model_name():
     if os.getenv("DEEPSEEK_API_KEY") or os.getenv("LLM_PROVIDER", "").lower() == "deepseek":
-        return os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
+        return os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
     if os.getenv("GEMINI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"):
         return os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
     return os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")

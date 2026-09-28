@@ -1,7 +1,7 @@
 """vision.py - SmartShop Computer Vision Module.
 
 Identifies products / reads barcodes from Telegram photos using
-DeepSeek V4 Vision (deepseek-flash via LiteLLM gateway), then looks up
+DeepSeek's official vision-capable chat API (deepseek-chat), then looks up
 Odoo catalog for stock & price data.
 """
 
@@ -49,14 +49,12 @@ _VISION_PROMPT = (
 
 
 def _call_deepseek_vision(image_bytes: bytes) -> dict:
-    """Call DeepSeek V4 (deepseek-flash) via LiteLLM gateway with OpenAI format."""
+    """Call DeepSeek's official vision-capable chat API (OpenAI-compatible format)."""
     api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
     if not api_key:
         return {"type": "error", "notes": "DEEPSEEK_API_KEY not configured"}
-    base_url = os.getenv("DEEPSEEK_BASE_URL", "").strip()
-    if not base_url or "api.deepseek.com" in base_url:
-        base_url = "https://litellm-production-7402.up.railway.app/v1"
-    model = os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
+    base_url = os.getenv("DEEPSEEK_BASE_URL", "").strip() or "https://api.deepseek.com"
+    model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
     try:
         from openai import OpenAI
@@ -214,7 +212,7 @@ def analyze_product_image(image_bytes: bytes) -> str:
     Full pipeline: DeepSeek V4 Vision -> Odoo lookup -> 3-section business response.
     Called by app.py when a user sends a photo to Telegram.
     """
-    # 1. Vision analysis: DeepSeek V4 (deepseek-flash via LiteLLM gateway)
+    # 1. Vision analysis: DeepSeek's official vision-capable chat API
     v = _call_deepseek_vision(image_bytes)
     img_type = v.get("type", "unknown")
     product_name = v.get("product_name", "")
