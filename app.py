@@ -267,7 +267,16 @@ async def telegram_loop():
                         text = msg.get("text", "").strip()
                         callback = update.get("callback_query", {})
                         if callback:
-                            await handle_callback(callback, message_handler)
+                            cb_from_id = str(callback.get("from", {}).get("id", ""))
+                            print(f"[CALLBACK RECEIVED] data={callback.get('data')!r} from={cb_from_id}")
+                            try:
+                                await handle_callback(callback, message_handler)
+                            except Exception as cex:
+                                print(f"⚠️ [CALLBACK ERROR] data={callback.get('data')!r} err={cex!r}")
+                                import traceback as _tb
+                                _tb.print_exc()
+                                if cb_from_id:
+                                    await tg_send(cb_from_id, f"❌ Button error: {str(cex)[:200]}", parse_mode=None)
                             continue
 
                         # ─── Computer Vision: handle photo messages ───

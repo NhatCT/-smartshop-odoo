@@ -77,7 +77,8 @@ def fetch_user_context(email: str) -> dict | None:
     gids = u.get("all_group_ids", [])
     if gids:
         try:
-            raw = _odoo.search_read("res.groups", [["id", "in", gids]], ["full_name", "display_name", "name"], 100)
+            raw = _odoo.search_read("res.groups", [["id", "in", gids]], ["full_name", "display_name", "name"], 100,
+                                    context={"lang": "en_US"})
             skip = ["Technical", "Skip", "Address", "Editor", "Website"]
             groups = [g.get("full_name") or g.get("display_name") or g.get("name", "")
                       for g in raw if g.get("full_name") or g.get("display_name") or g.get("name")]

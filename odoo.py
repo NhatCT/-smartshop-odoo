@@ -25,16 +25,18 @@ class OdooClient:
             self._odoo.login(self.db, self.username, self.password)
             return self._odoo
 
-    def search_read(self, model, domain=None, fields=None, limit=50):
+    def search_read(self, model, domain=None, fields=None, limit=50, context=None):
         try:
             odoo = self.connect()
-            ids = odoo.env[model].search(domain or [], limit=limit)
-            return odoo.env[model].read(ids, fields or []) if ids else []
+            m = odoo.env[model].with_context(**context) if context else odoo.env[model]
+            ids = m.search(domain or [], limit=limit)
+            return m.read(ids, fields or []) if ids else []
         except Exception:
             self._odoo = None
             odoo = self.connect()
-            ids = odoo.env[model].search(domain or [], limit=limit)
-            return odoo.env[model].read(ids, fields or []) if ids else []
+            m = odoo.env[model].with_context(**context) if context else odoo.env[model]
+            ids = m.search(domain or [], limit=limit)
+            return m.read(ids, fields or []) if ids else []
 
     def create(self, model, values):
         try:
